@@ -32,21 +32,12 @@ jobs:
 
       # 4 Install R + binary packages
       - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit :contentReference[oaicite:1]{index=1}
-      - uses: r-lib/actions/setup-r-dependencies@v2
-        with:
-          packages: |
-            any::ssh
-            any::tidyverse
-            any::hrbrthemes
-            any::ggfittext
-            any::tidyquant
-            any::tseries
-            any::xts
-            any::plotly
-            any::ggalt
-            any::DT
-            any::jsonlite
-            any::rvest
+      - name: Install required R packages
+         run: |
+           Rscript -e 'install.packages(
+             c("ssh","tidyverse","hrbrthemes","ggfittext","tidyquant",
+               "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
+             repos = "https://cloud.r-project.org", dependencies = TRUE)'
 
       # 5 Fire the script (it uses SSH transparently via the agent)
       - name: Run R script
