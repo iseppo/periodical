@@ -23,7 +23,7 @@ jobs:
       #    – nothing ever touches the runner’s disk
       - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag :contentReference[oaicite:0]{index=0}
         with:
-          ssh-private-key: ${{ secrets.SSH_KEY }}
+          ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
 
       # 3 Trust the host fingerprint (prevents MITM & prompts)
       - name: Add server fingerprint
