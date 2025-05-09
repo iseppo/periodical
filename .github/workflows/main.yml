@@ -1,0 +1,53 @@
+name: run-turuylevaade-daily
+
+on:
+  # 10:05 in Tallinn = 07:05 UTC
+  schedule:
+    - cron: '5 7 * * *'
+  workflow_dispatch: {}          # manual “Run workflow” button
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    # Mask every command’s stdout/stderr that contains a secret
+    permissions:
+      contents: read            # checkout code
+      id-token: write           # future-proof for OIDC, not used now
+
+    steps:
+      # 1 Pull the repo
+      - uses: actions/checkout@v4
+
+      # 2 Load the deployment key into an in-memory ssh-agent
+      #    – nothing ever touches the runner’s disk
+      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag :contentReference[oaicite:0]{index=0}
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      # 3 Trust the host fingerprint (prevents MITM & prompts)
+      - name: Add server fingerprint
+        run: |
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      # 4 Install R + binary packages
+      - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit :contentReference[oaicite:1]{index=1}
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: |
+            any::ssh,          # script does its own scp/ssh
+            any::tidyverse,    # example – remove if not needed
+            any::hrbrthemes,
+            any::ggfittext,
+            any::tidyquant,
+            any::tseries,
+            any::xts,
+            any::plotly,
+            any::ggalt,
+            any::DT,
+            any::jsonlite,
+            any::rvest
+
+      # 5 Fire the script (it uses SSH transparently via the agent)
+      - name: Run R script
+        run: Rscript run_turuylevaade.R
