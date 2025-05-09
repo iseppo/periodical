@@ -37,7 +37,16 @@ jobs:
           extra-packages: |
             any::ssh,          # script does its own scp/ssh
             any::tidyverse,    # example – remove if not needed
-            any::lubridate
+            any::hrbrthemes,
+            any::ggfittext,
+            any::tidyquant,
+            any::tseries,
+            any::xts,
+            any::plotly,
+            any::ggalt,
+            any::DT,
+            any::jsonlite,
+            any::rvest
 
       # 5 Fire the script (it uses SSH transparently via the agent)
       - name: Run R script
