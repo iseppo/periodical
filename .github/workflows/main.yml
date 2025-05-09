@@ -21,7 +21,7 @@ jobs:
 
       # 2 Load the deployment key into an in-memory ssh-agent
       #    – nothing ever touches the runner’s disk
-      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag :contentReference[oaicite:0]{index=0}
+      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag
         with:
           ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
 
@@ -31,13 +31,13 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
       # 4 Install R + binary packages
-      - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit :contentReference[oaicite:1]{index=1}
+      - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit
       - name: Install required R packages
-         run: |
-           Rscript -e 'install.packages(
-             c("ssh","tidyverse","hrbrthemes","ggfittext","tidyquant",
-               "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
-             repos = "https://cloud.r-project.org", dependencies = TRUE)'
+        run: |
+          Rscript -e 'install.packages(
+            c("ssh","tidyverse","hrbrthemes","ggfittext","tidyquant",
+              "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
+            repos = "https://cloud.r-project.org", dependencies = TRUE)'
 
       # 5 Fire the script (it uses SSH transparently via the agent)
       - name: Run R script
