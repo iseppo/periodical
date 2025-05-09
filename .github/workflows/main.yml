@@ -35,8 +35,8 @@ jobs:
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
-            any::ssh,          # script does its own scp/ssh
-            any::tidyverse,    # example – remove if not needed
+            any::ssh,          
+            any::tidyverse,    
             any::hrbrthemes,
             any::ggfittext,
             any::tidyquant,
