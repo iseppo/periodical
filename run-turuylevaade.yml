@@ -1,9 +1,9 @@
 name: run-turuylevaade-daily
 
 on:
-  # 03:00 in Tallinn = 00:00 UTC
+  # 10:05 in Tallinn = 07:05 UTC
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '5 7 * * *'
   workflow_dispatch: {}          # manual “Run workflow” button
 
 jobs:
