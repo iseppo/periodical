@@ -1,0 +1,142 @@
+---
+title: "Kihlveod Tuleva vs LHV, Tuleva vs SEB"
+author: "Indrek Seppo"
+google-analytics: "G-FE6B32BYX2"
+date: today
+lang: et
+language:
+  title-block-author-single: "Autor"
+  title-block-published: "Avaldatud"
+format:
+  html:
+    self-contained: true
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+
+```{r}
+library(tidyverse)
+library(hrbrthemes)
+library(tidyquant)
+library(tseries)
+library(xts)
+hrbrthemes::import_roboto_condensed()
+```
+# Taustast
+
+Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõnadest jäi puudu ja käiku läksid käed, et sõlmida sõbralik kihlvedu.
+
+Kumb tõuseb kümne aastaga rohkem - LHV L või Tuleva Maailma Aktsiate Indeks? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
+
+Vahel on tuhat eurot indekseerituna SP500-ga. 
+
+Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks SEB pensionifond 18+.
+
+Originaallõim [FBs](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl), [Ekspressi lugu](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed).
+
+
+# Kuidas on läinud seni fondidel?
+
+```{r}
+date_to <- today()
+
+url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2023-08-03&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
+
+navid <- read.csv2(url, fileEncoding ="UTF-16", header = TRUE, sep = "\t")
+navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
+navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
+navid$Fond[navid$Fond == "LHV Pensionifond L"] <- "LHV L"
+navid <- navid %>%
+  group_by(Fond, Lühinimi) %>%
+  mutate(NAV = NAV/NAV[1]) %>%
+  ungroup() %>%
+  mutate(Kuupäev = dmy(Kuupäev))
+
+navid_end <- navid %>%
+  filter(Kuupäev == max(Kuupäev))
+
+max_kp <- max(navid$Kuupäev)
+
+navid_end <- navid_end %>%
+  mutate(Fond = fct_reorder(Fond, NAV)) %>%
+  mutate(Fond = fct_rev(Fond))
+
+navid <- navid %>%
+  mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
+
+colors = c("LHV L" = "#4A4E5A", "SEB 18+" = "#60CD18", 
+           "Tuleva Maailma Aktsiad" = "#00aeea")
+
+p <- navid %>%
+  ggplot(aes(x = Kuupäev, y = NAV)) +
+  geom_line(aes(color = Fond)) +
+  geom_point(data = navid_end, size = 2, aes(color = Fond)) +
+  theme_ipsum_rc() +
+  scale_color_manual(values = colors) +
+  scale_x_date(date_labels = "%m/%Y") +
+  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2), color = Fond), nudge_x = 35, show.legend = FALSE) +
+  labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
+       y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
+ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
+
+```
+![](kihlvedu.png)
+
+
+# Kuidas on läinud summal, mille peale kihla vedasime?
+
+Me vedasime kihla 1000€ peale indekseerituna S&P 500-sse. Kuis see summa aja jooksul kasvanud/kahanenud on ja kuhu tänaseks jõudnud?
+
+```{r include=FALSE}
+# Download VUAA data
+getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03")
+sp500_tr <- Cl(`SP500TR`)
+
+# Download EUR/USD exchange rate data
+getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03")
+eur_usd <- Cl(`EURUSD=X`)
+```
+
+
+```{r}
+
+#eur_usd <- na.approx(eur_usd)
+# Convert S&P 500 Total Return Index to EUR
+sp500_tr_eur <- sp500_tr / eur_usd
+
+# Handle missing values
+sp500_tr_eur <- na.approx(sp500_tr_eur)
+
+
+sp500_tr_eur_df <- data.frame(Date = index(sp500_tr_eur), Value = coredata(sp500_tr_eur))
+
+sp500_tr_eur_df <- sp500_tr_eur_df %>%
+  mutate(SP500TR.Close = SP500TR.Close/SP500TR.Close[1]*1000)
+
+sp500_lastvalue <- sp500_tr_eur_df %>%
+  filter(Date == max(Date))
+
+max_date <- max(sp500_lastvalue$Date)
+sp500_tr_eur_df %>%
+  ggplot(aes(x = Date, y = SP500TR.Close)) +
+  geom_line() +
+  geom_point(data = sp500_lastvalue, size = 2) +
+  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 35) +
+  theme_ipsum_rc() +
+  labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+```
+
+
+# Kuidas on LHV fondidel läinud pikemas perspektiivis võrreldes Tulevaga?
+
+Tegelikult ei ole pensioniinvestori jaoks kuigi oluline see, kui palju tõuseb mõni fond kahe kuupäeva vahel. Meid huvitab, palju meie jooksvad sissemaksed tõusevad selleks ajaks, kui neid välja võtma hakkame. Ehk neid kuupäevi, mille vaheline kasv -- või langus -- meid huvitab, on palju.
+
+Ma olen siin graafikul püüdnud seda visualiseerida. Ta ei ole päris täpne -- ma olen siin eeldanud, et igal päeval on veidi raha pensionifondi kantud (tegelikult kantakse kuskil kuu keskel) ja arvutanud, kui palju see keskmiselt viimastel andmetel kasvanud on.
+
+Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV agressiivselt soovitab Tuleva indeksiga.
+
+
+![](aastane_tulu_tuleva_lhv.png)
