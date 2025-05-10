@@ -10,7 +10,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      RSPM:  https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
+      RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
       RENV_CONFIG_REPOS_OVERRIDE: ${{ env.RSPM }}
       RENV_CONFIG_INSTALL_PRECOMPILED: "true"
       R_LIBS_USER: ${{ github.workspace }}/renv/library
@@ -33,20 +33,29 @@ jobs:
         run: |
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      # 4 Restore packages via renv
+      # 4 Cache R packages
+      - name: Cache R packages
+        uses: actions/cache@v3
+        with:
+          path: ${{ github.workspace }}/renv/library
+          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-renv-
+
+      # 5 Restore packages via renv
       - name: Restore packages via renv
         run: |
           Rscript -e 'install.packages("renv", repos = Sys.getenv("RSPM"))'
           Rscript -e 'renv::restore(lockfile = "renv.lock", prompt = FALSE)'
 
-      # 5 Install required R packages
+      # 6 Install required R packages
       - name: Install required R packages
         run: |
           Rscript -e 'install.packages(
             c("ssh","tidyverse","hrbrthemes","ggfittext","tidyquant",
               "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
-            repos = "https://cloud.r-project.org", dependencies = TRUE)'
+            repos = Sys.getenv("RSPM"), dependencies = TRUE)'
 
-      # 6 Fire the script (it uses SSH transparently via the agent)
+      # 7 Fire the script (it uses SSH transparently via the agent)
       - name: Run R script
         run: Rscript run_turuylevaade.R
