@@ -9,12 +9,11 @@ on:
 jobs:
   run:
     runs-on: ubuntu-latest
-env:
-  RSPM:  https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
-  RENV_CONFIG_REPOS_OVERRIDE: ${{ env.RSPM }}
-  RENV_CONFIG_INSTALL_PRECOMPILED: "true"
-  R_LIBS_USER: ${{ github.workspace }}/renv/library
-    # Mask every command’s stdout/stderr that contains a secret
+    env:
+      RSPM:  https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
+      RENV_CONFIG_REPOS_OVERRIDE: ${{ env.RSPM }}
+      RENV_CONFIG_INSTALL_PRECOMPILED: "true"
+      R_LIBS_USER: ${{ github.workspace }}/renv/library
     permissions:
       contents: read            # checkout code
       id-token: write           # future-proof for OIDC, not used now
@@ -34,15 +33,13 @@ env:
         run: |
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-- name: Restore packages via renv
-  run: |
-    Rscript -e 'install.packages("renv", repos = Sys.getenv("RSPM"))'
-    Rscript -e 'renv::restore(lockfile = "renv.lock", prompt = FALSE)'
+      # 4 Restore packages via renv
+      - name: Restore packages via renv
+        run: |
+          Rscript -e 'install.packages("renv", repos = Sys.getenv("RSPM"))'
+          Rscript -e 'renv::restore(lockfile = "renv.lock", prompt = FALSE)'
 
-
-
-
-      
+      # 5 Install required R packages
       - name: Install required R packages
         run: |
           Rscript -e 'install.packages(
@@ -50,6 +47,6 @@ env:
               "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
             repos = "https://cloud.r-project.org", dependencies = TRUE)'
 
-      # 5 Fire the script (it uses SSH transparently via the agent)
+      # 6 Fire the script (it uses SSH transparently via the agent)
       - name: Run R script
         run: Rscript run_turuylevaade.R
