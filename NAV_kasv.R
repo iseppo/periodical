@@ -151,39 +151,4 @@ write_xlsx(lai, path = "Tootlus_kuni_01.11.2023.xlsx")
 
 
 
-navid_kuu_pikk$year <- year(navid_kuu_pikk$Kuupäev)
-navid_kuu_pikk$quarter <- quarter(navid_kuu_pikk$Kuupäev)
-
-navid_kuu_pikk <- left_join(navid_kuu_pikk, keskmpalk2)
-
-navid_kuu_pikk$pensionisse <- navid_kuu_pikk$keskmpalk * 0.06
-navid_kuu_pikk$pensionisse_fix <- 100
-navid_kuu_pikk <- navid_kuu_pikk %>%
-  mutate(tulemus = (100+value)/100*pensionisse) %>%
-  mutate(tulemus_fix = (100 + value)/(100*pensionisse_fix))
-
-
-
-
-navid_kuu_pikk %>%
-#  filter(Kuupäev > dmy("01.02.2022")) %>%
-  group_by(name) %>%
-  summarize(tulemus = sum(tulemus, na.rm = TRUE), tulemus_fix = sum(tulemus_fix, na.rm = TRUE))
-
-
-
-võrdlus <- navid_kuu_pikk %>%
-  pivot_wider() %>%
-  mutate(xl_tuleva = LHVXL - Tuleva, l_tuleva = LHVL - Tuleva) %>%
-  mutate(tuleva_vs_xl = xl_tuleva > 0, tuleva_vs_l = l_tuleva>0)
-
-mean(võrdlus$tuleva_vs_l, na.rm = TRUE)
-mean(võrdlus$tuleva_vs_xl, na.rm = TRUE)
-
-length(unique(võrdlus$Kuupäev))
-uhu <- võrdlus %>%
-  filter(xl_tuleva > 0)
-
-
-võrdlus
 
