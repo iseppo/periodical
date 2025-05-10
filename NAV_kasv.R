@@ -150,17 +150,6 @@ library(writexl)
 write_xlsx(lai, path = "Tootlus_kuni_01.11.2023.xlsx")
 
 
-keskmpalk <- read_csv2("PA001_20230721-215730.csv") %>%
-  pivot_longer(cols = c(everything(), -Näitaja, -Tegevusala))
-
-keskmpalk2 <- keskmpalk %>%
-  separate(name, into = c("year", "quarter", "temp"), sep = " ") %>%
-  mutate(quarter = as.numeric(as.roman(quarter))) %>%
-  select(-temp, -Tegevusala) %>%
-  mutate(year = as.numeric(year)) %>%
-  filter(!is.na(year)) %>%
-  rename(keskmpalk = value)
-
 
 navid_kuu_pikk$year <- year(navid_kuu_pikk$Kuupäev)
 navid_kuu_pikk$quarter <- quarter(navid_kuu_pikk$Kuupäev)
