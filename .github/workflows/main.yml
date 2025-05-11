@@ -5,6 +5,8 @@ env:
   CRAN: https://cloud.r-project.org
   RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-12
   RENV_CONFIG_INSTALL_PRECOMPILED: "true"
+  RSPM_BIN:  https://packagemanager.posit.co/cran/__linux__/jammy/latest
+  RSPM_SRC:  https://packagemanager.posit.co/cran/2025-05-12
   R_LIBS_USER: ${{ github.workspace }}/renv/library
 
 on:
@@ -38,33 +40,30 @@ jobs:
       # 4 install R
       - uses: r-lib/actions/setup-r@v2
 
-      # 4 Cache R packages
-      - name: Cache R packages
-        uses: actions/cache@v3
+      # 5 Cache the renv library
+      - uses: actions/cache@v3                     # docs :contentReference[oaicite:2]{index=2}
         with:
-          path: ${{ github.workspace }}/renv/library
-          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-renv-
+          path: ${{ env.R_LIBS_USER }}
+          key:  ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
+          restore-keys: ${{ runner.os }}-renv-
 
-      # 5 Restore packages via renv
-      - name: Restore packages
+      # 6 Install renv (always from CRAN) and restore packages
+      - name: Restore packages with renv
         run: |
-          Rscript -e 'install.packages("renv", repos = Sys.getenv("CRAN"))'
+          Rscript -e 'install.packages("renv", repos = "https://cloud.r-project.org")'
           Rscript - <<'RSCRIPT'
-            repos <- c(RSPM = Sys.getenv("RSPM"), CRAN = Sys.getenv("CRAN"))
-            options(repos = repos, install.packages.compile.from.source = "never")
+            repos <- c(
+              JAMMY_BIN = Sys.getenv("RSPM_BIN"),
+              SNAP_SRC  = Sys.getenv("RSPM_SRC"),
+              CRAN      = Sys.getenv("CRAN")
+            )
+            options(
+              repos = repos,
+              install.packages.compile.from.source = "never"
+            )
             renv::restore(lockfile = "renv.lock", prompt = FALSE, repos = repos)
-          RSCRIPT
+RSCRIPT
 
-      # 6 Install required R packages
-      - name: Install required R packages
-        run: |
-          Rscript -e 'install.packages(
-            c("ssh","tidyverse","hrbrthemes","ggfittext","tidyquant",
-              "tseries","xts","plotly","ggalt","DT","jsonlite","rvest"),
-            repos = Sys.getenv("RSPM"), dependencies = TRUE)'
-
-      # 7 Fire the script (it uses SSH transparently via the agent)
-      - name: Run R script
+      # 7 Run the analysis script
+      - name: Run turuülevaade
         run: Rscript run_turuylevaade.R
