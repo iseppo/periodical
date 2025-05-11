@@ -61,7 +61,7 @@ jobs:
               install.packages.compile.from.source = "never"
             )
             renv::restore(lockfile = "renv.lock", prompt = FALSE, repos = repos)
-RSCRIPT
+          RSCRIPT
 
       # 7 Run the analysis script
       - name: Run turuülevaade
