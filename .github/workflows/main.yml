@@ -61,10 +61,18 @@ jobs:
           key:  ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
           restore-keys: ${{ runner.os }}-renv-
 
-      # 6 Install renv (always from CRAN) and restore packages
       - name: Restore packages with renv
         run: |
+          #  kindlusta, et kaust on olemas
+          mkdir -p "${R_LIBS_USER}"
+
+          # paigalda renv otse sellesse kausta
+          Rscript -e 'install.packages("renv", lib = Sys.getenv("R_LIBS_USER"), repos = "https://cloud.r-project.org")'
+
+          # tee sama libPath kättesaadavaks ka järgmisele R-protsessile
           Rscript - <<'RSCRIPT'
+            .libPaths(Sys.getenv("R_LIBS_USER"))   # lisame käsitsi esimeseks
+
             repos <- c(
               JAMMY_BIN = Sys.getenv("RSPM_BIN"),
               SNAP_SRC  = Sys.getenv("RSPM_SRC"),
