@@ -2,6 +2,7 @@ name: run-turuylevaade-daily
 
 env:
   RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-12
+  CRAN: https://cloud.r-project.org
   RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-12
   RENV_CONFIG_INSTALL_PRECOMPILED: "true"
   R_LIBS_USER: ${{ github.workspace }}/renv/library
@@ -46,10 +47,15 @@ jobs:
             ${{ runner.os }}-renv-
 
       # 5 Restore packages via renv
-      - name: Restore packages via renv
-        run: |
-          Rscript -e 'install.packages("renv", repos = Sys.getenv("RSPM"))'
-          Rscript -e 'renv::restore(lockfile = "renv.lock", prompt = FALSE)'
+# renv restore – kaks repo­t; proovib RSPM-i, kui seal pole → CRAN
+- name: Restore packages
+  run: |
+    Rscript -e 'install.packages("renv", repos = Sys.getenv("CRAN"))'
+    Rscript - <<'RSCRIPT'
+      repos <- c(RSPM = Sys.getenv("RSPM"), CRAN = Sys.getenv("CRAN"))
+      options(repos = repos, install.packages.compile.from.source = "never")
+      renv::restore(lockfile = "renv.lock", prompt = FALSE, repos = repos)
+RSCRIPT
 
       # 6 Install required R packages
       - name: Install required R packages
