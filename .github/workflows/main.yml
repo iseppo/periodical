@@ -1,11 +1,10 @@
 name: run-turuylevaade-daily
 
 env:
-  RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
-  RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
+  RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-12
+  RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-12
   RENV_CONFIG_INSTALL_PRECOMPILED: "true"
-  # R_LIBS_USER võib olla suhteline; loome renv/library jooksu ajal
-  R_LIBS_USER: renv/library
+  R_LIBS_USER: ${{ github.workspace }}/renv/library
 
 on:
   # 10:05 in Tallinn = 07:05 UTC
