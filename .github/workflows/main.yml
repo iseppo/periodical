@@ -34,6 +34,8 @@ jobs:
       - name: Add server fingerprint
         run: |
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+      # 4 install R
+      - uses: r-lib/actions/setup-r@v2
 
       # 4 Cache R packages
       - name: Cache R packages
