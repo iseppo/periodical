@@ -3,7 +3,11 @@
     "Version": "4.3.3",
     "Repositories": [
       {
-        "Name": "RSPM",
+        "Name": "JAMMY_BIN",
+        "URL": "https://packagemanager.posit.co/cran/latest"
+      },
+      {
+        "Name": "SNAP20250512",
         "URL": "https://packagemanager.posit.co/cran/2025-05-12"
       }
     ]
