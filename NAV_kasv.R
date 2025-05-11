@@ -145,10 +145,6 @@ navid_kuu_pikk %>%
 lai <- navid_kuu_pikk %>%
   select(Kuupäev, name, value) %>%
   pivot_wider()
-library(writexl)
-
-write_xlsx(lai, path = "Tootlus_kuni_01.11.2023.xlsx")
-
 
 
 
