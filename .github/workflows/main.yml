@@ -1,5 +1,9 @@
 name: run-turuylevaade-daily
 
+env:
+  RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
+
+
 on:
   # 10:05 in Tallinn = 07:05 UTC
   schedule:
@@ -10,7 +14,6 @@ jobs:
   run:
     runs-on: ubuntu-latest
     env:
-      RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/2025-05-08
       RENV_CONFIG_REPOS_OVERRIDE: ${{ env.RSPM }}
       RENV_CONFIG_INSTALL_PRECOMPILED: "true"
       R_LIBS_USER: ${{ github.workspace }}/renv/library
