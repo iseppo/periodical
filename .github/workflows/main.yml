@@ -46,7 +46,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libcurl4-openssl-dev libssh-dev libssl-dev \
             libcairo2-dev libfontconfig1-dev libfreetype6-dev \
-            libpng-dev libjpeg-dev libxml2-dev 
+            libpng-dev libjpeg-dev libxml2-dev libproj-dev pandoc
 
       # 5 Cache the renv library
       - uses: actions/cache@v3
