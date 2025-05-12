@@ -59,7 +59,7 @@ jobs:
     - name: Install Quarto CLI
       uses: quarto-dev/quarto-actions/setup@v2      # installs latest Quarto CLI :contentReference[oaicite:0]{index=0}
       with:
-        version: 'latest'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
+        version: 'release'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
 
     # 8. Cache the renv library
     - uses: actions/cache@v3
