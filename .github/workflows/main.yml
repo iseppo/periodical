@@ -1,84 +1,95 @@
 name: run-turuylevaade-daily
 
 env:
-  RSPM: https://packagemanager.posit.co/cran/__linux__/jammy/latest
+  # Use Posit Public Package Manager for R binaries
+  USE_PUBLIC_RSPM: true
   CRAN: https://cloud.r-project.org
-  RENV_CONFIG_REPOS_OVERRIDE: https://packagemanager.posit.co/cran/__linux__/jammy/latest
-  RENV_CONFIG_INSTALL_PRECOMPILED: "true"
-  RSPM_BIN:  https://packagemanager.posit.co/cran/__linux__/jammy/latest
-  RSPM_SRC:  https://packagemanager.posit.co/cran/2025-05-12
   R_LIBS_USER: ${{ github.workspace }}/renv/library
 
 on:
-  # 10:05 in Tallinn = 07:05 UTC
   schedule:
-    - cron: '5 7 * * *'
-  workflow_dispatch: {}          # manual “Run workflow” button
+    - cron: '5 7 * * *'    # 10:05 EEST = 07:05 UTC
+  workflow_dispatch: {}
 
 jobs:
   run:
     runs-on: ubuntu-latest
     permissions:
-      contents: read            # checkout code
-      id-token: write           # future-proof for OIDC, not used now
+      contents: read
+      id-token: write
 
     steps:
-      # 1 Pull the repo
-      - uses: actions/checkout@v4
+    # 1. Checkout code
+    - uses: actions/checkout@v4
 
-      # 2 Load the deployment key into an in-memory ssh-agent
-      #    – nothing ever touches the runner’s disk
-      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag
-        with:
-          ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
+    # 2. SSH key in RAM
+    - uses: webfactory/ssh-agent@v0.9.1
+      with:
+        ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
 
-      # 3 Trust the host fingerprint (prevents MITM & prompts)
-      - name: Add server fingerprint
-        run: |
-          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+    # 3. Pin host key
+    - name: Add server fingerprint
+      run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-      # 4 install R
-      - uses: r-lib/actions/setup-r@v2
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libcurl4-openssl-dev libssh-dev libssl-dev \
-            libcairo2-dev libfontconfig1-dev libfreetype6-dev \
-            libpng-dev libjpeg-dev libxml2-dev libproj-dev pandoc libharfbuzz-dev libfribidi-dev quarto
+    # 4. Install R (with Pandoc & build tools)
+    - uses: r-lib/actions/setup-r@v2
+      with:
+        use-public-rspm: ${{ env.USE_PUBLIC_RSPM }}
 
-      # 5 Cache the renv library
-      - uses: actions/cache@v3
-        with:
-          path: ${{ env.R_LIBS_USER }}
-          key:  ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
-          restore-keys: ${{ runner.os }}-renv-
+    # 5. Pre-accept Microsoft Fonts EULA
+    - name: Pre-accept MS Core Fonts EULA
+      run: |
+        echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
+          | sudo debconf-set-selections
+        export DEBIAN_FRONTEND=noninteractive
 
-      - name: Restore packages with renv
-        run: |
-          #  kindlusta, et kaust on olemas
-          mkdir -p "${R_LIBS_USER}"
+    # 6. System dependencies & fonts
+    - name: Install system dependencies & fonts
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends \
+          libcurl4-openssl-dev libssh-dev libssl-dev \
+          libcairo2-dev libfontconfig1-dev libfreetype6-dev \
+          libpng-dev libjpeg-dev libxml2-dev libproj-dev \
+          ttf-mscorefonts-installer fonts-liberation \
+          fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
+          pandoc
 
-          # paigalda renv otse sellesse kausta
-          Rscript -e 'install.packages("renv", lib = Sys.getenv("R_LIBS_USER"), repos = "https://cloud.r-project.org")'
+    # 7. Install Quarto CLI via official action
+    - name: Install Quarto CLI
+      uses: quarto-dev/quarto-actions/setup@v2      # installs latest Quarto CLI :contentReference[oaicite:0]{index=0}
+      with:
+        version: 'latest'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
 
-          # tee sama libPath kättesaadavaks ka järgmisele R-protsessile
-          Rscript - <<'RSCRIPT'
-            .libPaths(Sys.getenv("R_LIBS_USER"))   # lisame käsitsi esimeseks
+    # 8. Cache the renv library
+    - uses: actions/cache@v3
+      with:
+        path: ${{ env.R_LIBS_USER }}
+        key:  ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
+        restore-keys: ${{ runner.os }}-renv-
 
-            repos <- c(
-              JAMMY_BIN = Sys.getenv("RSPM_BIN"),
-              SNAP_SRC  = Sys.getenv("RSPM_SRC"),
-              CRAN      = Sys.getenv("CRAN")
-            )
-            options(
-              repos = repos,
-              install.packages.compile.from.source = "never"
-            )
-            renv::restore(lockfile = "renv.lock", prompt = FALSE, repos = repos)
-          RSCRIPT
+    # 9. Restore R packages via renv
+    - name: Restore R packages with renv
+      run: |
+        mkdir -p "${R_LIBS_USER}"
+        Rscript -e 'install.packages("renv", lib = Sys.getenv("R_LIBS_USER"), repos = "'"${CRAN}"'")'
+        Rscript - <<'RSCRIPT'
+          .libPaths(Sys.getenv("R_LIBS_USER"))
+          options(
+            repos = c(
+              RSPM = "https://packagemanager.posit.co/cran/__linux__/jammy/latest",
+              CRAN = Sys.getenv("CRAN")
+            ),
+            install.packages.compile.from.source = "never"
+          )
+          renv::restore(lockfile = "renv.lock", prompt = FALSE)
+        RSCRIPT
 
-      # 7 Run the analysis script
-      - name: Run turuülevaade
-        run: Rscript run_turuylevaade.R
+    # 10. Register hrbrthemes fonts in R (optional)
+    - name: Register hrbrthemes fonts
+      run: |
+        Rscript -e "options(hrbrthemes.loadfonts=TRUE); library(hrbrthemes)"
+
+    # 11. Run your analysis script
+    - name: Run turuülevaade
+      run: Rscript run_turuylevaade.R
