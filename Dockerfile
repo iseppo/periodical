@@ -1,5 +1,5 @@
 # 1. Base image with R and minimal OS
-FROM rocker/r-ver:4.4.0-jammy
+FROM rocker/r-ver:4.4.0
 
 LABEL maintainer="your.name@company.com"
 
@@ -29,12 +29,21 @@ RUN mkdir -p /opt/renv-cache
 # 5. Copy only what’s needed for renv restore
 COPY renv.lock renv/activate.R ./
 
-# 6. Install renv and restore your exact packages
-RUN Rscript -e 'install.packages("renv", repos="https://cloud.r-project.org")' && \
-    Rscript -e 'options(
-        repos = c(RSPM = Sys.getenv("RSPM_BIN"), SNAP = Sys.getenv("RSPM_SRC")),
-        install.packages.compile.from.source = "never"
-      ); renv::restore(prompt=FALSE)'
+# 6. Install renv and restore
+
+# Install renv and restore in one go
+# ── Install renv and restore in one RUN ─────────────────────────────────
+RUN Rscript -e '\
+  install.packages("renv", repos="https://cloud.r-project.org"); \
+  options( \
+    repos = c( \
+      RSPM = Sys.getenv("RSPM_BIN"), \
+      SNAP = Sys.getenv("RSPM_SRC") \
+    ), \
+    install.packages.compile.from.source = "never" \
+  ); \
+  renv::restore(lockfile="renv.lock", prompt=FALSE) \
+'
 
 # 7. Copy the rest of your project (scripts, data, etc.)
 COPY . .
