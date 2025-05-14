@@ -1,49 +1,51 @@
 # History files
 .Rhistory
 .Rapp.history
-
 # Session Data files
 .RData
 .RDataTmp
-
 # User-specific files
 .Ruserdata
-
 # Example code in package build process
 *-Ex.R
-
 # Output files from R CMD build
 /*.tar.gz
-
 # Output files from R CMD check
 /*.Rcheck/
-
 # RStudio files
 .Rproj.user/
-
 # produced vignettes
 vignettes/*.html
 vignettes/*.pdf
-
 # OAuth2 token, see https://github.com/hadley/httr/releases/tag/v0.3
 .httr-oauth
-
 # knitr and R markdown default cache directories
 *_cache/
 /cache/
-
 # Temporary files created by R markdown
 *.utf8.md
 *.knit.md
-
 # R Environment Variables
 .Renviron
-
 # pkgdown site
 docs/
-
 # translation temp files
 po/*~
-
 # RStudio Connect folder
 rsconnect/
+Tootlus_kuni_01.11.2023.xlsx
+turuylevaade.html
+tulevaturuosa_inclTUK00.png
+aastane_tulu_tuleva_lhv.png
+indeksfondide_turuosa.csv
+kihlvedu.png
+koguturg_indeksfondid_osakaal.csv
+koguturg_koguinfo.csv
+osakaal.png
+raha_kasv_EPI.png
+raha_kasv_LHV.png
+teine_sammas_kokku_indeks.png
+teine_sammas_kokku_indeks_vs_juhitud_maht.png
+teine_sammas_kokku_indeks_vs_juhitud_maht57.png
+tuleva.html
+tulevaturuosa.png
