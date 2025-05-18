@@ -101,15 +101,15 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
 ```{r loe_failid, warning=FALSE, include=FALSE}
 # Read data in
 
-fondid_investorid <- read_csv("data/fondid_investorid.csv")
-fondid_maht <- read_csv("data/fondid_maht.csv")
-fondid_investorid$Kuupäev <- dmy(fondid_investorid$Kuupäev)
+#fondid_investorid <- read_csv("data/fondid_investorid.csv")
+#fondid_maht <- read_csv("data/fondid_maht.csv")
+#fondid_investorid$Kuupäev <- dmy(fondid_investorid$Kuupäev)
 ```
 
 
 ```{r lae_alla_info, warning=FALSE, include=FALSE}
 # this if clause doesn't seem to work as the max data is always from previous days I guess
-if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
+#if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
   fondid_investorid <- data.frame()
   fondid_maht <- data.frame()
   for(i in fondid$id){
@@ -124,10 +124,10 @@ if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäe
     fondid_maht <- bind_rows(fondid_maht, andmed_maht)
     
   }
-  write_csv(fondid_investorid, "data/fondid_investorid.csv")
-  write_csv(fondid_maht, "data/fondid_maht.csv")
+#  write_csv(fondid_investorid, "data/fondid_investorid.csv")
+#  write_csv(fondid_maht, "data/fondid_maht.csv")
 
-}
+#}
 ```
 
 
