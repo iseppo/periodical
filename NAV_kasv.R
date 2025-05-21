@@ -79,7 +79,7 @@ navid_kuu_epi <- navid_kuu %>%
 
 navid_kuu_pikk <- navid_kuu_pikk %>%
   mutate(value_cut = cut(value, c(-10, 0, 10, 20,30, 40))) %>%
-  mutate(value_cut = fct_recode(value_cut, ">0%" = "(-10,0]"))
+  mutate(value_cut = fct_recode(value_cut, "<=0%" = "(-10,0]"))
 
 
 p <- navid_kuu_pikk %>%
