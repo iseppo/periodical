@@ -10,7 +10,7 @@ jobs:
   run:
     runs-on: ubuntu-latest
 
-    # Mask every command’s stdout/stderr that contains a secret
+    # Set the minimal permissions required by the job
     permissions:
       contents: read            # checkout code
       id-token: write           # future-proof for OIDC, not used now
@@ -21,7 +21,7 @@ jobs:
 
       # 2 Load the deployment key into an in-memory ssh-agent
       #    – nothing ever touches the runner’s disk
-      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag :contentReference[oaicite:0]{index=0}
+      - uses: webfactory/ssh-agent@v0.9.1      # pin exact tag
         with:
           ssh-private-key: ${{ secrets.SSH_KEY }}
 
@@ -31,7 +31,7 @@ jobs:
           ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
       # 4 Install R + binary packages
-      - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit :contentReference[oaicite:1]{index=1}
+      - uses: r-lib/actions/setup-r@v2         # maintained by R-core / Posit
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
           extra-packages: |
