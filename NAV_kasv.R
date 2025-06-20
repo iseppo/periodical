@@ -15,7 +15,7 @@ navid <- navid_raw %>%
   pivot_wider(names_from = Fond, values_from = NAV) %>%
   # Filter for funds needed in *subsequent* calculations, but maybe not EPI here if it's just a benchmark?
   # Let's keep the original filter for now, assuming Tuleva and EPI are essential baseline data points.
-  filter(!is.na(`Tuleva Maailma Aktsiate Pensionifond`), !is.na(`EPI – üldindeks`))
+  filter(!is.na(`Tuleva Maailma Aktsiate Pensionifond`), !is.na(`II samba üldindeks`))
 
 # Convert dates AFTER filtering potentially incomplete rows
 navid$Kuupäev <- dmy(navid$Kuupäev)
@@ -32,7 +32,7 @@ last_day_navs <- navid %>%
 
 # Extract the specific NAV values for the funds of interest from that last day
 # Use .subset2 for slight efficiency and error if column doesn't exist
-last_epi_nav <- last_day_navs$`EPI – üldindeks`
+last_epi_nav <- last_day_navs$`II samba üldindeks`
 last_tuleva_nav <- last_day_navs$`Tuleva Maailma Aktsiate Pensionifond`
 last_lhvxl_nav <- last_day_navs$`LHV Pensionifond XL`
 last_lhvl_nav <- last_day_navs$`LHV Pensionifond L`
@@ -51,7 +51,7 @@ navid_kuu <- navid %>%
   group_by(Kuupäev = floor_date(Kuupäev, unit = "month")) %>%
   # Using mean NAV for the starting month, as per original code.
   # Could use first(NAV) or last(NAV) if you want start-of-month or end-of-month NAV instead.
-  summarize(`EPI – üldindeks` = mean(`EPI – üldindeks`, na.rm = TRUE),
+  summarize(`II samba üldindeks` = mean(`II samba üldindeks`, na.rm = TRUE),
             `Tuleva Maailma Aktsiate Pensionifond` = mean(`Tuleva Maailma Aktsiate Pensionifond`, na.rm = TRUE),
             `LHV Pensionifond XL` = mean(`LHV Pensionifond XL`, na.rm = TRUE),
             `LHV Pensionifond L` = mean(`LHV Pensionifond L`, na.rm = TRUE),
@@ -62,7 +62,7 @@ navid_kuu <- navid %>%
 navid_kuu <- navid_kuu %>%
   mutate(
     # Calculate return from the monthly average NAV to the specific LAST DAY NAV
-    EPI = 100 * (last_epi_nav / `EPI – üldindeks` - 1),
+    EPI = 100 * (last_epi_nav / `II samba üldindeks` - 1),
     Tuleva = 100 * (last_tuleva_nav / `Tuleva Maailma Aktsiate Pensionifond` - 1),
     LHVXL = 100 * (last_lhvxl_nav / `LHV Pensionifond XL` - 1),
     LHVL = 100 * (last_lhvl_nav / `LHV Pensionifond L` - 1),
