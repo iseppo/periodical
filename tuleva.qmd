@@ -125,7 +125,8 @@ sp500_tr_eur_df %>%
   ggplot(aes(x = Date, y = SP500TR.Close)) +
   geom_line() +
   geom_point(data = sp500_lastvalue, size = 2) +
-  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 35) +
+  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
+  scale_x_date(date_labels = "%m/%Y") +
   theme_ipsum_rc() +
   labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
 ```
