@@ -66,7 +66,6 @@ navid_kuu <- navid_kuu %>%
     Tuleva = 100 * (last_tuleva_nav / `Tuleva Maailma Aktsiate Pensionifond` - 1),
     LHVXL = 100 * (last_lhvxl_nav / `LHV Pensionifond XL` - 1),
     LHVL = 100 * (last_lhvl_nav / `LHV Pensionifond L` - 1),
-    # Corrected the parenthesis mistake and name consistency here
     LHVIndeks = 100 * (last_lhvindex_nav / `LHV Pensionifond Indeks` - 1)
   )
 
@@ -101,8 +100,8 @@ ggsave(p, file = "raha_kasv_LHV.png", height = 5, width =7, scale = 1.1, bg = "w
 
 p <- navid_kuu_pikk |>
   filter(name %in% c("LHVL", "LHVXL", "Tuleva")) |>
+  filter(year(Kuupäev) != max(year(Kuupäev))) |>
   group_by(aasta = as.factor(year(Kuupäev)), name) |>
-  filter(aasta !=2025) |>
   summarize(value = round(mean(value, na.rm = TRUE)/100, 2)) |>
   mutate(value_pc = paste0(100*value, "%")) |>
   ggplot(aes(x = aasta, y = value, fill = name)) +
