@@ -1,7 +1,6 @@
 ---
 title: "Kihlveod Tuleva vs LHV, Tuleva vs SEB"
 author: "Indrek Seppo"
-google-analytics: "G-FE6B32BYX2"
 date: today
 lang: et
 language:
@@ -10,6 +9,7 @@ language:
 format:
   html:
     self-contained: true
+    google-analytics: "G-FE6B32BYX2"
 execute: 
   echo: false
   warning: false
