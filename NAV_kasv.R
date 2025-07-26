@@ -1,3 +1,6 @@
+# Lae vajalikud teegid
+library(httr)
+library(jsonlite)
 library(tidyverse)
 library(hrbrthemes)
 library(ggfittext)
@@ -81,6 +84,99 @@ navid_kuu_pikk <- navid_kuu_pikk %>%
   mutate(value_cut = fct_recode(value_cut, "<=0%" = "(-10,0]"))
 
 
+## Lisa inflatsioon
+
+
+
+# API URL
+url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
+
+current_year <- year(today())
+
+aastad <- c(2017:current_year)
+
+# Päringu sisu R-i listina (sama, mis eelmisel korral)
+query_body <- list(
+  query = list(
+    list(
+      code = "Aasta",
+      selection = list(
+        filter = "item",
+        values = I(aastad)
+      )
+    ),
+    list(
+      code = "Kaubagrupp",
+      selection = list(
+        filter = "item",
+        values = I(c("1"))
+      )
+    )
+  ),
+  response = list(
+    format = "csv2"
+  )
+)
+
+# Teisenda R-i list JSON stringiks
+json_payload <- toJSON(query_body, auto_unbox = TRUE)
+
+# Tee POST päring
+response <- POST(
+  url,
+  body = json_payload,
+  add_headers("Content-Type" = "application/json")
+)
+
+# Kontrolli tulemust
+if (http_status(response)$category == "Success") {
+  # Saame vastuse tekstina kätte
+  csv_data <- content(response, "text", encoding = "UTF-8")
+  
+  # Loeme CSV-teksti otse data.frame'i
+  # check.names = FALSE hoiab ära selle, et R muudaks veerunimesid (nt asendaks tühikud punktidega)
+  df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) |>
+    rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) |>
+    mutate(indeks = as.numeric(indeks)) |>
+    mutate(kuu = ifelse(Kuu == "Jaanuar", 1, 
+                        ifelse(Kuu == "Veebruar", 2, 
+                               ifelse(Kuu == "Märts", 3, 
+                                      ifelse(Kuu == "Aprill", 4, 
+                                             ifelse(Kuu == "Mai", 5, 
+                                                    ifelse(Kuu == "Juuni", 6, 
+                                                           ifelse(Kuu == "Juuli", 7, 
+                                                                  ifelse(Kuu == "August", 8, 
+                                                                         ifelse(Kuu == "September", 9, 
+                                                                                ifelse(Kuu == "Oktoober", 10, 
+                                                                                       ifelse(Kuu == "November", 11, 
+                                                                                              ifelse(Kuu == "Detsember", 12, NA))))))))))))) |>
+    mutate(kuu = as.integer(kuu)) |>
+    mutate(date = as.Date(paste(Aasta, kuu, "01", sep = "-"))) |>
+    arrange(date) |>
+    filter(date > dmy("01-03-2017")) |>
+    filter(!is.na(indeks)) 
+  
+last_inflation = df %>%
+    filter(date == max(date)) %>%
+    pull(indeks)
+
+inflatsioon <- df |>
+  mutate(indeks = (last_inflation/indeks -1) * 100) |>
+  select(date, indeks) |>
+  rename(Kuupäev = date, value = indeks) |>
+  mutate(name = "inflatsioon")
+  
+  
+  
+} else {
+  # Väljasta veateade, kui midagi läks valesti
+  cat("Päring ebaõnnestus, staatuskood:", status_code(response), "\n")
+  cat("Saadetud JSON:\n", json_payload, "\n\n")
+  cat("Serveri vastus:\n")
+  cat(content(response, "text", encoding = "UTF-8"))
+}
+
+
 p <- navid_kuu_pikk %>%
   filter(name %in% c("LHVL", "LHVXL", "Tuleva")) %>%
   ggplot(aes(x = Kuupäev, y = value)) +
@@ -96,11 +192,16 @@ p <- navid_kuu_pikk %>%
 p
 ggsave(p, file = "raha_kasv_LHV.png", height = 5, width =7, scale = 1.1, bg = "white")
 
+navid_kuu_pikk <- navid_kuu_pikk |>
+  filter(name %in% c("LHVL", "LHVXL", "Tuleva")) |>
+  select(Kuupäev, name, value) |>
+  bind_rows(inflatsioon) |>
+  filter(year(Kuupäev) != max(year(Kuupäev))) |>
+  mutate(name = fct_relevel(name, "LHVL", "LHVXL", "Tuleva", "inflatsioon")) 
+  
 
 
 p <- navid_kuu_pikk |>
-  filter(name %in% c("LHVL", "LHVXL", "Tuleva")) |>
-  filter(year(Kuupäev) != max(year(Kuupäev))) |>
   group_by(aasta = as.factor(year(Kuupäev)), name) |>
   summarize(value = round(mean(value, na.rm = TRUE)/100, 2)) |>
   mutate(value_pc = paste0(100*value, "%")) |>
@@ -108,7 +209,7 @@ p <- navid_kuu_pikk |>
   geom_col(position = "dodge") +
   geom_bar_text(position = "dodge", aes(label = value_pc), outside = TRUE, min.size = 3, padding.x = grid::unit(0.2, "mm"), size = 8) +
   scale_fill_manual("Fond:", values = c("LHVL" = "#4A4E5A", "LHVXL" = "#222221", 
-                                        "Tuleva" = "#00aeea")) +
+                                        "Tuleva" = "#00aeea", "inflatsioon" = "#FF8C00")) +
   theme_ipsum_rc() +
   scale_y_percent() +
   labs(title = "Kui palju on keskmiselt kasvanud tänaseks raha",
@@ -135,15 +236,6 @@ p <- navid_kuu_epi %>%
 p
 ggsave(p, file = "raha_kasv_EPI.png", height = 5, width =7, scale = 1.1, bg = "white")
 
-
-navid_kuu_pikk %>%
-  group_by(name) %>%
-  summarize(value = sum(100 + value))
-
-
-lai <- navid_kuu_pikk %>%
-  select(Kuupäev, name, value) %>%
-  pivot_wider()
 
 
 
