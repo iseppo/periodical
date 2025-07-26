@@ -9,7 +9,7 @@ language:
 format:
   html:
     self-contained: true
-    google-analytics: "G-FE6B32BYX2"
+    include-in-header: analytics.html
 execute: 
   echo: false
   warning: false
