@@ -25,6 +25,9 @@ library(tseries)
 library(xts)
 hrbrthemes::import_roboto_condensed()
 ```
+
+(Kui kõik töötab, uuenevad järgnevad graafikud igal hommikul veidi peale kell kümmet)
+
 # Taustast
 
 Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõnadest jäi puudu ja käiku läksid käed, et sõlmida sõbralik kihlvedu.
