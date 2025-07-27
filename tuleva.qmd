@@ -24,6 +24,7 @@ library(hrbrthemes)
 library(tidyquant)
 library(tseries)
 library(xts)
+library(quantmod)
 hrbrthemes::import_roboto_condensed()
 ```
 
