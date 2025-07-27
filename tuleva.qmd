@@ -11,7 +11,7 @@ format:
     self-contained: true
     include-in-header: analytics.html
     footer: "Minu töine koduleht: [seppo.ai](https://seppo.ai)"
-execute: 
+execute:
   echo: false
   warning: false
   message: false
@@ -36,7 +36,7 @@ Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõn
 
 Kumb tõuseb kümne aastaga rohkem - LHV L või Tuleva Maailma Aktsiate Indeks? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
 
-Vahel on tuhat eurot indekseerituna SP500-ga. 
+Vahel on tuhat eurot indekseerituna SP500-ga.
 
 Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks SEB pensionifond 18+.
 
@@ -72,7 +72,7 @@ navid_end <- navid_end %>%
 navid <- navid %>%
   mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
 
-colors = c("LHV L" = "#4A4E5A", "SEB 18+" = "#60CD18", 
+colors = c("LHV L" = "#4A4E5A", "SEB 18+" = "#60CD18",
            "Tuleva Maailma Aktsiad" = "#00aeea")
 
 p <- navid %>%
@@ -88,7 +88,7 @@ p <- navid %>%
        y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
 
-``` 
+```
 ![](kihlvedu.png){fig-alt="Graafik pensionifondide tootlusest"}
 
 
