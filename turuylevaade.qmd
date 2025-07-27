@@ -29,8 +29,6 @@ execute:
 library(tidyverse)
 library(hrbrthemes)
 library(plotly)
-library(DT)
-library(ggalt)
 library(jsonlite)
 library(rvest)
 ```
