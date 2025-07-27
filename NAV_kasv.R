@@ -132,24 +132,20 @@ response <- POST(
 if (http_status(response)$category == "Success") {
   # Saame vastuse tekstina kätte
   csv_data <- content(response, "text", encoding = "UTF-8")
+
+  month_lookup <- c(
+    "Jaanuar" = 1, "Veebruar" = 2, "Märts" = 3,
+    "Aprill" = 4, "Mai" = 5, "Juuni" = 6,
+    "Juuli" = 7, "August" = 8, "September" = 9,
+    "Oktoober" = 10, "November" = 11, "Detsember" = 12
+  )
   
   # Loeme CSV-teksti otse data.frame'i
   # check.names = FALSE hoiab ära selle, et R muudaks veerunimesid (nt asendaks tühikud punktidega)
   df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) |>
     rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) |>
     mutate(indeks = as.numeric(indeks)) |>
-    mutate(kuu = ifelse(Kuu == "Jaanuar", 1, 
-                        ifelse(Kuu == "Veebruar", 2, 
-                               ifelse(Kuu == "Märts", 3, 
-                                      ifelse(Kuu == "Aprill", 4, 
-                                             ifelse(Kuu == "Mai", 5, 
-                                                    ifelse(Kuu == "Juuni", 6, 
-                                                           ifelse(Kuu == "Juuli", 7, 
-                                                                  ifelse(Kuu == "August", 8, 
-                                                                         ifelse(Kuu == "September", 9, 
-                                                                                ifelse(Kuu == "Oktoober", 10, 
-                                                                                       ifelse(Kuu == "November", 11, 
-                                                                                              ifelse(Kuu == "Detsember", 12, NA))))))))))))) |>
+    mutate(kuu = month_lookup[Kuu]) |>
     mutate(kuu = as.integer(kuu)) |>
     mutate(date = as.Date(paste(Aasta, kuu, "01", sep = "-"))) |>
     arrange(date) |>
