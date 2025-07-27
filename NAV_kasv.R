@@ -130,7 +130,7 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
     scale_y_continuous(breaks = c(0:5) * 10) +
     labs(
       title = "Mitu protsenti on su raha kasvanud",
-      subtitle = "s\xF5ltuvalt sissemaksu kuust",
+      subtitle = "sõltuvalt sissemaksu kuust",
       x = "sissemaksu kuu",
       y = "sissemakse kasvanud (%)",
       caption = paste("seisuga", maxdate)
@@ -171,9 +171,9 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
     scale_y_percent() +
     labs(
       title = "Kui palju on keskmiselt kasvanud t\xE4naseks raha",
-      subtitle = "s\xF5ltuvalt sissepaneku aastast ja fondist",
+      subtitle = "sõltuvalt sissepaneku aastast ja fondist",
       x = "raha sissepaneku aasta",
-      y = "kasv t\xE4naseks",
+      y = "kasv tänaseks",
       caption = paste(
         "seisuga",
         maxdate,
@@ -198,7 +198,7 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
     theme_ipsum_rc() +
     labs(
       title = "Mitu protsenti on su raha kasvanud",
-      subtitle = "s\xF5ltuvalt sissemaksu kuust",
+      subtitle = "sõltuvalt sissemaksu kuust",
       x = "sissemaksu kuu",
       y = "sissemakse kasvanud (%)",
       caption = paste("seisuga", maxdate)
