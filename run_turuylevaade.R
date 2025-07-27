@@ -5,6 +5,7 @@ library(ssh)
 source("NAV_kasv.R")
 generate_nav_charts()
 system("quarto render turuylevaade.qmd")
+system("quarto render tuleva.qmd")
 
 # Üks tryCatch plokk kõigi SSH toimingute jaoks
 tryCatch({
@@ -28,9 +29,7 @@ tryCatch({
                        "./koguturg_koguinfo.csv"), 
              to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/")
   
-  # Renderda teine Quarto fail
-  system("quarto render tuleva.qmd")
-  
+
   # Lae üles viimane fail
   scp_upload(session, 
              "./tuleva.html", 
