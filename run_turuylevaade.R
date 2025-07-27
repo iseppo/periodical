@@ -1,60 +1,45 @@
+# Lae vajalikud teegid
 library(ssh)
 
+# Käivita skriptid ja genereeri failid enne SSH-toiminguid
 source("NAV_kasv.R")
 generate_nav_charts()
-
 system("quarto render turuylevaade.qmd")
 
-session <- tryCatch(
-  ssh_connect("virt135256@seppo.ai"),
-  error = function(e) {
-    message("Failed to establish SSH connection: ", e$message)
-    stop("SSH connection failed", call. = FALSE)
-  }
-)
-on.exit(ssh_disconnect(session))
-
-tryCatch(
-  scp_upload(session, "./aastane_tulu_tuleva_lhv.png", to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/"),
-  error = function(e) {
-    message("Failed to upload aastane_tulu_tuleva_lhv.png: ", e$message)
-    stop("Upload failed", call. = FALSE)
-  }
-)
-
-tryCatch(
-  scp_upload(session, "./turuylevaade.html", to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/"),
-  error = function(e) {
-    message("Failed to upload turuylevaade.html: ", e$message)
-    stop("Upload failed", call. = FALSE)
-  }
-)
-tryCatch(
-  scp_upload(session, "./koguturg_indeksfondid_osakaal.csv", to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/"),
-  error = function(e) {
-    message("Failed to upload koguturg_indeksfondid_osakaal.csv: ", e$message)
-    stop("Upload failed", call. = FALSE)
-  }
-)
-tryCatch(
-  scp_upload(session, "./koguturg_koguinfo.csv", to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/"),
-  error = function(e) {
-    message("Failed to upload koguturg_koguinfo.csv: ", e$message)
-    stop("Upload failed", call. = FALSE)
-  }
-)
-
-system("quarto render tuleva.qmd")
-
-tryCatch(
-  scp_upload(session, "./tuleva.html", to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/"),
-  error = function(e) {
-    message("Failed to upload tuleva.html: ", e$message)
-    stop("Upload failed", call. = FALSE)
-  }
-)
-
-
-
-ssh_disconnect(session)
-
+# Üks tryCatch plokk kõigi SSH toimingute jaoks
+tryCatch({
+  # Loo SSH ühendus
+  session <- ssh_connect("virt135256@seppo.ai")
+  
+  # Tagab seansi sulgemise plokist väljumisel (nii vea kui ka edu korral)
+  on.exit(ssh_disconnect(session), add = TRUE)
+  
+  message("SSH ühendus loodud.")
+  
+  # Lae üles esimene fail
+  scp_upload(session, 
+             "./aastane_tulu_tuleva_lhv.png", 
+             to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/")
+  
+  # Lae üles mitu faili korraga 'tuleva' kausta
+  scp_upload(session, 
+             files = c("./turuylevaade.html", 
+                       "./koguturg_indeksfondid_osakaal.csv", 
+                       "./koguturg_koguinfo.csv"), 
+             to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/")
+  
+  # Renderda teine Quarto fail
+  system("quarto render tuleva.qmd")
+  
+  # Lae üles viimane fail
+  scp_upload(session, 
+             "./tuleva.html", 
+             to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/")
+  
+  message("Kõik failid on edukalt üles laetud.")
+  
+}, error = function(e) {
+  # See plokk käivitub, kui mõni ülaltoodud SSH toiming ebaõnnestub
+  message("SSH toiming ebaõnnestus: ", e$message)
+  stop("SSH toiming ebaõnnestus, skript peatatakse.", call. = FALSE)
+})
