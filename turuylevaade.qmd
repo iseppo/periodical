@@ -650,8 +650,6 @@ ggplotly(p)
 
 # Muutused -- mahud
 
-Kas siin poleks mõistlikum 1, 4, 8, 12 kuud?
-
 ::: panel-tabset
 #### Mahud -- 1 kuu
 
