@@ -1401,14 +1401,4 @@ p
 :::
 
 
-```{r}
-# Tõmba alla ja salvesta turu ajalugu
-now_unix <- as.numeric(Sys.time())
-
-data <- fromJSON(paste0("https://www.pensionikeskus.ee/ws/et/stats/fund-pev/2005-08-03?_=", now_unix))
-period_end <- data$period_info$end
-# Edaspidi loe oma failist
-
-
-```
 
