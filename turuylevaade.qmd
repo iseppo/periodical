@@ -530,260 +530,100 @@ write_csv(indeksfondid, file = "indeksfondide_turuosa.csv")
 ```
 :::
 
+
+# helper to plot monthly changes for investors or volume
+```{r}
+make_change_plot <- function(data, months_back, var){
+  maksp2ev <- max(data$Kuupäev)
+  minp2ev <- maksp2ev %m-% months(months_back)
+
+  kuuinfo <- data %>%
+    ungroup() %>%
+    filter(Kuupäev > minp2ev) %>%
+    filter(Kuupäev == min(Kuupäev, na.rm = TRUE) | Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
+    select(Lühinimi, !!sym(var), Kuupäev) %>%
+    pivot_wider(names_from = Kuupäev, values_from = !!sym(var))
+
+  names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
+
+  if(var == "maht") {
+    kuuinfo_graaf <- kuuinfo %>%
+      mutate(muutus = round((täna - eelmine_kuu)/1000000, 1),
+             muutus_pc = round(100 * muutus * 1000000 / eelmine_kuu))
+    x_label <- "muutus (milj. eurot)"
+    title_prefix <- "Maht: "
+  } else {
+    kuuinfo_graaf <- kuuinfo %>%
+      mutate(muutus = täna - eelmine_kuu,
+             muutus_pc = round(100 * muutus / eelmine_kuu, 1))
+    x_label <- "muutus"
+    title_prefix <- "Investorite arv: "
+  }
+
+  kuuinfo_graaf <- kuuinfo_graaf %>%
+    mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
+    mutate(ette = case_when(
+      muutus > 0 ~ "+",
+      muutus < 0 ~ "",
+      TRUE ~ ""
+    )) %>%
+    mutate(formatted = format(muutus, big.mark = " "),
+           formatted = str_trim(formatted),
+           label = paste0(ette, formatted, "\n", muutus_pc, "%"))
+
+  label_pos <- filter(kuuinfo_graaf, muutus >= 0)
+  label_neg <- filter(kuuinfo_graaf, muutus < 0)
+  label_pos_tuleva <- filter(kuuinfo_graaf, muutus >= 0, Lühinimi == "TUK75")
+  label_neg_tuleva <- filter(kuuinfo_graaf, muutus < 0, Lühinimi == "TUK75")
+
+  p <- kuuinfo_graaf %>%
+    ggplot(aes(x = muutus, y = Lühinimi)) +
+    geom_col() +
+    geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"),
+             fill = "#00aeea", color = "#00aeea") +
+    theme_ft_rc() +
+    labs(title = paste0(title_prefix, minp2ev, " - ", maksp2ev),
+         y = "", x = x_label)
+
+  kaugus <- dist(range(kuuinfo_graaf$muutus))
+
+  if(nrow(label_pos) > 0) p <- p +
+      geom_text(data = label_pos, aes(label = label), nudge_x = kaugus * 0.06)
+  if(nrow(label_neg) > 0) p <- p +
+      geom_text(data = label_neg, aes(label = label), nudge_x = kaugus * -0.06,
+                color = "brown3")
+  if(nrow(label_pos_tuleva) > 0) p <- p +
+      geom_text(data = label_pos_tuleva, aes(label = label),
+                nudge_x = kaugus * 0.06, color = "#00aeea")
+  if(nrow(label_neg_tuleva) > 0) p <- p +
+      geom_text(data = label_neg_tuleva, aes(label = label),
+                nudge_x = kaugus * -0.06, color = "#00aeea")
+
+  p
+}
+```
 # Muutused -- investorite arv
 
 ::: panel-tabset
 #### Investoreid -- 1 kuu
 
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(1)
-
-
-
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev, na.rm = TRUE) | Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
-  select(Lühinimi, `investeerijate arv`, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = `investeerijate arv`)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = täna - eelmine_kuu, muutus_pc = round(100*muutus/eelmine_kuu, 1)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Investorite arv: ", minp2ev, " - ", maksp2ev), y = "")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
-
+make_change_plot(indeksfondid, 1, "investeerijate arv")
 ```
 #### 3 kuud
 
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(3)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, `investeerijate arv`, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = `investeerijate arv`)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = täna - eelmine_kuu, muutus_pc = round(100*muutus/eelmine_kuu, 1)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Investorite arv: ", minp2ev, " - ", maksp2ev), y = "")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
+make_change_plot(indeksfondid, 3, "investeerijate arv")
 ```
-
-
 #### 6 kuud
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(6)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, `investeerijate arv`, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = `investeerijate arv`)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = täna - eelmine_kuu, muutus_pc = round(100*muutus/eelmine_kuu, 1)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Investorite arv: ", minp2ev, " - ", maksp2ev), y = "")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
-
+make_change_plot(indeksfondid, 6, "investeerijate arv")
 ```
-
 
 #### 12 kuud
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% years(1)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, `investeerijate arv`, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = `investeerijate arv`)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = täna - eelmine_kuu, muutus_pc = round(100*muutus/eelmine_kuu, 1)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Investorite arv: ", minp2ev, " - ", maksp2ev), y = "")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
+make_change_plot(indeksfondid, 12, "investeerijate arv")
 ```
-
 #### aasta graafik
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
@@ -816,252 +656,19 @@ Kas siin poleks mõistlikum 1, 4, 8, 12 kuud?
 #### Mahud -- 1 kuu
 
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(1)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, maht, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = maht)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = round((täna - eelmine_kuu)/1000000,1), muutus_pc = round(100*muutus*1000000/eelmine_kuu)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ "",
-    TRUE ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), 
-         label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Maht: ", minp2ev, " - ", maksp2ev), y = "", x = "muutus (milj. eurot)")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
+make_change_plot(indeksfondid, 1, "maht")
 ```
 #### 3 kuud
 
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(3)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, maht, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = maht)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = round((täna - eelmine_kuu)/1000000,1), muutus_pc = round(100*muutus*1000000/eelmine_kuu)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ "",
-    TRUE ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Maht: ", minp2ev, " - ", maksp2ev), y = "", x = "muutus (milj. eurot)")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
-```
-
-
-#### 6 kuud
-```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% months(6)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, maht, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = maht)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = round((täna - eelmine_kuu)/1000000,1), muutus_pc = round(100*muutus*1000000/eelmine_kuu)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ "",
-    TRUE ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Maht: ", minp2ev, " - ", maksp2ev), y = "", x = "muutus (milj. eurot)")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
+make_change_plot(indeksfondid, 3, "maht")
 ```
 
 
 #### 12 kuud
 ```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-minp2ev <- maksp2ev %m-% years(1)
-kuuinfo <- indeksfondid %>%
-  ungroup() %>%
-  filter(Kuupäev > minp2ev) %>%
-  filter(Kuupäev == min(Kuupäev) | Kuupäev == max(Kuupäev)) %>%
-  select(Lühinimi, maht, Kuupäev) %>%
-  pivot_wider(names_from = Kuupäev, values_from = maht)
-
-names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
-
-kuuinfo_graaf <- kuuinfo %>%
-  mutate(muutus = round((täna - eelmine_kuu)/1000000,1), muutus_pc = round(100*muutus*1000000/eelmine_kuu)) %>%
-  mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
-  mutate(ette = case_when(
-    muutus > 0 ~ "+",
-    muutus < 0 ~ "",
-    TRUE ~ ""
-  )) %>%
-  mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-
-label_pos <- kuuinfo_graaf %>%
-  filter(muutus >= 0)
-
-label_neg <- kuuinfo_graaf %>%
-  filter(muutus < 0)
-
-label_pos_tuleva <- kuuinfo_graaf %>%
-  filter(muutus >= 0, Lühinimi == "TUK75")
-
-label_neg_tuleva <- kuuinfo_graaf %>%
-  filter(muutus < 0, Lühinimi == "TUK75")
-
-p <- kuuinfo_graaf %>%
-  ggplot(aes(x = muutus, y = Lühinimi)) +
-  geom_col() +
-  geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
-  theme_ft_rc() +
-  labs(title = paste0("Maht: ", minp2ev, " - ", maksp2ev), y = "", x = "muutus (milj. eurot)")
-
-kaugus <- dist(range(kuuinfo_graaf$muutus))
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x =  kaugus * 0.06)
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * 0.06,
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = kaugus * -0.06,
-                                           color = "#00aeea")
-
-p
+make_change_plot(indeksfondid, 12, "maht")
 ```
-
 #### aasta graafik
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
