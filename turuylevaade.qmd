@@ -66,8 +66,6 @@ fund_titles <- html_attr(fund_links, "title")
 # Combine the IDs and titles into a data frame
 fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE)
 
-# Print the resulting data frame
-#print(fund_info)
 ```
 
 
@@ -149,7 +147,6 @@ fondid_info <- full_join(fondid_maht, fondid_investorid) %>%
 indeksfondid <- fondid_info %>%
   filter(Fond %in% fondid$fond[fondid$indeks == "x"])
 
-  unique(indeksfondid$Fond)
 ```
 
 
@@ -561,7 +558,6 @@ kuuinfo_graaf <- kuuinfo %>%
     muutus < 0 ~ ""
   )) %>%
   mutate(formatted = format(muutus, big.mark = " "), formatted = str_trim(formatted), label = paste0(ette, formatted, "\n", muutus_pc, "%"))
-##00aeea
 
 label_pos <- kuuinfo_graaf %>%
   filter(muutus >= 0)
