@@ -1,6 +1,7 @@
 library(ssh)
 
 source("NAV_kasv.R")
+generate_nav_charts()
 
 system("quarto render turuylevaade.qmd")
 
