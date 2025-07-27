@@ -87,8 +87,8 @@ p <- navid %>%
        y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
 
-```
-![](kihlvedu.png)
+``` 
+![](kihlvedu.png){fig-alt="Graafik pensionifondide tootlusest"}
 
 
 # Kuidas on läinud summal, mille peale kihla vedasime?
@@ -145,4 +145,4 @@ Ma olen siin graafikul püüdnud seda visualiseerida. Ta ei ole päris täpne --
 Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV agressiivselt soovitab, Tuleva indeksiga, kus ma ise olen. Võrdluseks on lisatud inflatsioon.
 
 
-![](aastane_tulu_tuleva_lhv.png)
+![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
