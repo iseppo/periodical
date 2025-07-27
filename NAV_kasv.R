@@ -170,7 +170,7 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
     theme_ipsum_rc() +
     scale_y_percent() +
     labs(
-      title = "Kui palju on keskmiselt kasvanud t\xE4naseks raha",
+      title = "Kui palju on keskmiselt kasvanud tänaseks raha",
       subtitle = "sõltuvalt sissepaneku aastast ja fondist",
       x = "raha sissepaneku aasta",
       y = "kasv tänaseks",
