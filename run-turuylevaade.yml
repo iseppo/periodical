@@ -36,7 +36,13 @@ jobs:
         with:
           extra-packages: |
             any::ssh,          # script does its own scp/ssh
-            any::tidyverse,    # example – remove if not needed
+            any::dplyr,
+            any::tidyr,
+            any::forcats,
+            any::ggplot2,
+            any::readr,
+            any::stringr,
+            any::lubridate,
             any::hrbrthemes,
             any::ggfittext,
             any::tidyquant,
