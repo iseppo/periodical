@@ -1,7 +1,13 @@
 # Load required packages
 library(httr)
 library(jsonlite)
-library(tidyverse)
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(ggplot2)
+library(readr)
+library(stringr)
+library(lubridate)
 library(hrbrthemes)
 library(ggfittext)
 
