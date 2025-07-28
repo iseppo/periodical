@@ -39,6 +39,7 @@ library(jsonlite)
 library(rvest)
 library(furrr)
 library(future)
+library(tibble)
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
