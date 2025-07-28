@@ -31,6 +31,8 @@ library(hrbrthemes)
 library(plotly)
 library(jsonlite)
 library(rvest)
+library(furrr)
+library(future)
 ```
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
@@ -106,7 +108,8 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
 ```{r lae_alla_info, warning=FALSE, include=FALSE}
 # this if clause doesn't seem to work as the max data is always from previous days I guess
 #if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
-  fondid_investorid <- purrr::map_dfr(fondid$id, function(i) {
+  plan(multisession)
+  fondid_investorid <- furrr::future_map_dfr(fondid$id, function(i) {
     message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
     url_investorid <- paste0(
       "https://www.pensionikeskus.ee/statistika/ii-sammas/aktiivsed-investorid/?download=xls&date_from=",
@@ -132,7 +135,7 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
     )
   })
 
-  fondid_maht <- purrr::map_dfr(fondid$id, function(i) {
+  fondid_maht <- furrr::future_map_dfr(fondid$id, function(i) {
     message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
     url_maht <- paste0(
       "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-maht/?download=xls&date_from=",
@@ -157,6 +160,7 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
       )
     )
   })
+  plan(sequential)
 #  write_csv(fondid_investorid, "data/fondid_investorid.csv")
 #  write_csv(fondid_maht, "data/fondid_maht.csv")
 
