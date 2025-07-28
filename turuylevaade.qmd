@@ -572,8 +572,9 @@ write_csv(indeksfondid, file = "indeksfondide_turuosa.csv")
 :::
 
 
-# helper to plot monthly changes for investors or volume
 ```{r}
+# helper to plot monthly changes for investors or volume
+
 make_change_plot <- function(data, months_back, var){
   maksp2ev <- max(data$Kuupäev)
   minp2ev <- maksp2ev %m-% months(months_back)
