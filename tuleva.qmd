@@ -5,7 +5,7 @@ date: today
 lang: et
 language:
   title-block-author-single: "Autor"
-  title-block-published: "Avaldatud"
+  title-block-published: "Uuendatud"
 format:
   html:
     self-contained: true
