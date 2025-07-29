@@ -193,6 +193,7 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
       legend.title = element_text(size = 8)
     )
   ggsave(p, file = "aastane_tulu_tuleva_lhv.png", height = 5, width = 7, scale = 1.1, bg = "white")
+ # save(p, file = "aastane_tulu_tuleva_lhv.RData")
 
   p <- epi %>%
     filter(name %in% c("EPI", "Tuleva")) %>%

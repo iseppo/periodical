@@ -31,6 +31,7 @@ library(tidyquant)
 library(tseries)
 library(xts)
 library(quantmod)
+library(plotly)
 hrbrthemes::import_roboto_condensed()
 ```
 
@@ -132,7 +133,7 @@ sp500_lastvalue <- sp500_tr_eur_df %>%
   filter(Date == max(Date))
 
 max_date <- max(sp500_lastvalue$Date)
-sp500_tr_eur_df %>%
+p <- sp500_tr_eur_df %>%
   ggplot(aes(x = Date, y = SP500TR.Close)) +
   geom_line() +
   geom_point(data = sp500_lastvalue, size = 2) +
@@ -140,6 +141,8 @@ sp500_tr_eur_df %>%
   scale_x_date(date_labels = "%m/%Y") +
   theme_ipsum_rc() +
   labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+
+ggplotly(p)
 ```
 
 
@@ -151,5 +154,9 @@ Ma olen siin graafikul püüdnud seda visualiseerida. Ta ei ole päris täpne --
 
 Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV agressiivselt soovitab, Tuleva indeksiga, kus ma ise olen. Võrdluseks on lisatud inflatsioon.
 
+```{r}
+#load("aastane_tulu_tuleva_lhv.RData")
+#ggplotly(p)
+```
 
 ![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
