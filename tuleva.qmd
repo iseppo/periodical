@@ -142,7 +142,7 @@ p <- sp500_tr_eur_df %>%
   theme_ipsum_rc() +
   labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
 
-ggplotly(p)
+p
 ```
 
 
