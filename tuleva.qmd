@@ -31,7 +31,6 @@ library(tidyquant)
 library(tseries)
 library(xts)
 library(quantmod)
-library(plotly)
 hrbrthemes::import_roboto_condensed()
 ```
 
