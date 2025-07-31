@@ -151,7 +151,7 @@ Tegelikult ei ole pensioniinvestori jaoks kuigi oluline see, kui palju tõuseb m
 
 Ma olen siin graafikul püüdnud seda visualiseerida. Ta ei ole päris täpne -- ma olen siin eeldanud, et igal päeval on veidi raha pensionifondi kantud (tegelikult kantakse kuskil kuu keskel) ja arvutanud, kui palju see keskmiselt viimastel andmetel kasvanud on.
 
-Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV agressiivselt soovitab, Tuleva indeksiga, kus ma ise olen. Võrdluseks on lisatud inflatsioon.
+Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV hoogsalt soovitab, Tuleva indeksiga, kus ma ise olen. Võrdluseks on lisatud inflatsioon.
 
 ```{r}
 #load("aastane_tulu_tuleva_lhv.RData")

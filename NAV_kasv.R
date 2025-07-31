@@ -150,6 +150,11 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
     filter(year(Kuupäev) != max(year(Kuupäev))) %>%
     mutate(name = fct_relevel(name, "LHVL", "LHVXL", "Tuleva", "inflatsioon"))
 
+inflatsioon_max <- inflatsioon %>%
+    filter(Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
+    pull(Kuupäev)  |>
+    format("%Y-%m")
+
   p <- pikk2 %>%
     group_by(aasta = as.factor(year(Kuupäev)), name) %>%
     summarize(value = round(mean(value, na.rm = TRUE) / 100, 2)) %>%
@@ -181,9 +186,14 @@ plot_nav_charts <- function(pikk, epi, inflatsioon, maxdate) {
       x = "raha sissepaneku aasta",
       y = "kasv tänaseks",
       caption = paste(
-        "seisuga",
+        "fondid seisuga",
         maxdate,
-        "\n ligikaudsed arvutused: Indrek Seppo"
+        ", ",
+        "inflatsioon kuni",
+        inflatsioon_max,
+        "\n",
+        "allikad: Pensionikeskus, Statistikaamet\n",
+        "ligikaudsed arvutused: Indrek Seppo"
       )
     ) +
     theme(
