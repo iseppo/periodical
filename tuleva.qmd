@@ -51,6 +51,8 @@ Originaallõim [FBs](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVk
 
 # Kuidas on läinud seni fondidel?
 
+Kihlvedu on teadlikult tehtud pika aja peale. Lühiajalist statistikat mõjutab liigselt juhus. Aga meelelahutuslikel eesmärkidel võib seda ikka jälgida.
+
 ```{r}
 date_to <- today()
 
