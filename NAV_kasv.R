@@ -178,6 +178,15 @@ inflatsioon_max <- inflatsioon %>%
         "inflatsioon" = "#FF8C00"
       )
     ) +
+    scale_color_manual(
+      "Fond:",
+      values = c(
+        "LHVL" = "#4A4E5A",
+        "LHVXL" = "#222221",
+        "Tuleva" = "#00aeea",
+        "inflatsioon" = "#FF8C00"
+      )
+    ) +
     theme_ipsum_rc() +
     scale_y_percent() +
     labs(
