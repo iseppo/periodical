@@ -1,51 +1,47 @@
 # Periodical
 
-This project generates regular market overviews and reports using R and Quarto.
+Projekti eesmärk on koostada regulaarselt turuülevaateid ja pensionifondide võrdlusi kasutades R‑i ja Quartot. Kood renderdab aruanded HTML-formaadis ning laadib need seejärel kaugserverisse.
 
-## Prerequisites
+## Eeldused
 
-- **R** &ge; 4.3 (the lock file uses R 4.3.3)
-- **Quarto CLI** &ge; 1.4 for rendering `.qmd` files
-- Optional: **Docker** if you prefer running the analysis inside a container
+- **R** vähemalt versioon 4.3 (lock fail kasutab versiooni 4.3.3)
+- **Quarto CLI** alates versioonist 1.4
+- soovi korral **Docker**, et analüüs konteineris käivitada
 
-## Manual execution
+## Käivitamine käsitsi
 
-Run the main script from the repository root:
+Peamenüü käsu saab käivitada reposti juurkataloogist:
 
 ```sh
 Rscript run_turuylevaade.R
 ```
 
-The script renders `turuylevaade.qmd` and `tuleva.qmd` with Quarto and uploads the
-results to the configured server via SSH.
+Skript koostab graafikud ja renderdab `turuylevaade.qmd` ning `tuleva.qmd` failid. Lõpuks laaditakse valminud tulemused SSH abil serverisse.
 
 ## GitHub Actions
 
-The workflow `.github/workflows/main.yml` runs the script automatically every
-morning (07:05&nbsp;UTC) and can also be triggered manually. It installs R,
-Quarto and the required packages before calling `Rscript run_turuylevaade.R`.
+Kataloogis `.github/workflows` on töövoog, mis käivitab skripti iga päev kell 07:05 UTC ning vajadusel ka käsitsi. Töövoog installib R-i, Quartot ja kõik vajaminevad paketid enne analüüsi käivitamist.
 
-## Docker
+## Dockeriga kasutamine
 
-A `Dockerfile` is provided to reproduce the environment. Build and run the image
-with:
+Keskkonna taasloomiseks on kaasas `Dockerfile`. Pildi ehitamiseks ja konteineri käivitamiseks kasuta:
 
 ```sh
 docker build -t periodical .
 docker run --rm periodical
 ```
 
-The container defaults to executing `run_turuylevaade.R`.
+Vaikimisi käivitub konteineris skript `run_turuylevaade.R`.
 
-## Data sources
+## Andmeallikad
 
-The analysis fetches data from:
+Analüüs kasutab andmeid allikatest:
 
-- [Pensionikeskus](https://www.pensionikeskus.ee/) for Estonian pension fund
-  statistics
-- [Yahoo Finance](https://finance.yahoo.com/) for market data
+- [Pensionikeskus](https://www.pensionikeskus.ee/) – Eesti pensionifondide statistika
+- [Statistikaamet](https://www.stat.ee/) – Eesti inflatsiooniandmed
+- [Yahoo Finance](https://finance.yahoo.com/) – S&P 500 andmed ja euro/dollari kurss
 
-## License
+## Litsents
 
-Released under the BSD&nbsp;3‑Clause License. See [LICENSE](LICENSE) for details.
+Projekt on avaldatud BSD 3-Clause litsentsi alusel. Täpsemad tingimused leiad failist [LICENSE](LICENSE).
 
