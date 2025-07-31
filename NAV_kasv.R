@@ -159,8 +159,8 @@ inflatsioon_max <- inflatsioon %>%
     group_by(aasta = as.factor(year(Kuupäev)), name) %>%
     summarize(value = round(mean(value, na.rm = TRUE) / 100, 2)) %>%
     mutate(value_pc = paste0(100 * value, "%")) %>%
-    ggplot(aes(x = aasta, y = value, fill = name, color = name)) +
-    geom_col(position = "dodge") +
+    ggplot(aes(x = aasta, y = value, fill = name)) +
+    geom_col(position = "dodge", aes(color = name)) +
     geom_bar_text(
       position = "dodge",
       aes(label = value_pc),
