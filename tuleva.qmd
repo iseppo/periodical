@@ -157,7 +157,7 @@ p <- fondide_tasud %>%
 p
 ```
 
-
+Aktiivselt juhitud fondid peavad indeksfondidega sammu pidamiseks ületama turukeskmist (ehk turuindeksit) rohkem, kui nende jooksvad tasud ületavad indeksfondi tasusid. Kogu minu argument on, et ajalooliselt ei ole nad keskmiselt seda suutnud. Kas võib olla erandeid? Võib, aga ma ei paneks oma raha selle alla.
 
 
 
