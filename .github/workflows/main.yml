@@ -61,29 +61,13 @@ jobs:
       with:
         version: 'release'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
 
-    # 8. Cache the renv library
-    - uses: actions/cache@v3
+    # asendab 8 ja 9
+    - name: Cache & Restore R packages
+      uses: r-lib/actions/setup-r-dependencies@v2
       with:
-        path: ${{ env.R_LIBS_USER }}
-        key:  ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
-        restore-keys: ${{ runner.os }}-renv-
-
-    # 9. Restore R packages via renv
-    - name: Restore R packages with renv
-      run: |
-        mkdir -p "${R_LIBS_USER}"
-        Rscript -e 'install.packages("renv", lib = Sys.getenv("R_LIBS_USER"), repos = "'"${CRAN}"'")'
-        Rscript - <<'RSCRIPT'
-          .libPaths(Sys.getenv("R_LIBS_USER"))
-          options(
-            repos = c(
-              RSPM = "https://packagemanager.posit.co/cran/__linux__/jammy/latest",
-              CRAN = Sys.getenv("CRAN")
-            ),
-            install.packages.compile.from.source = "never"
-          )
-          renv::restore(lockfile = "renv.lock", prompt = FALSE)
-        RSCRIPT
+        packages:
+          any::renv # Installib renv-i, kui vaja
+        cache-version: 1 # Hea praktika vahemälu versioneerimiseks
 
     # 10. Register hrbrthemes fonts in R (optional)
     - name: Register hrbrthemes fonts
