@@ -38,7 +38,7 @@ library(ggfittext)
 hrbrthemes::import_roboto_condensed()
 ```
 
-(Kui kõik töötab, uuenevad järgnevad graafikud automaagiliselt igal hommikul veidi peale kell kümmet)
+(Kui kõik töötab, uuenevad järgnevad graafikud automaagiliselt igal hommikul veidi peale kell kümmet; lähtekood: [github](https://github.com/iseppo/periodical)).
 
 # Taustast
 
