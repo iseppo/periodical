@@ -10,7 +10,7 @@ format:
   html:
     self-contained: true
     include-in-header: analytics.html
-    footer: "Minu töine koduleht: [seppo.ai](https://seppo.ai)"
+    include-after-body: footer.html
 execute:
   echo: false
   warning: false
