@@ -159,3 +159,8 @@ Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin 
 ```
 
 ![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
+
+
+# Kust näha, kuidas on läinud sinul endal?
+
+Kaks võimalust: 1) logi sisse Pensionikeskuse lehele [pensionikeskus.ee](https://www.pensionikeskus.ee) (sealt peale sisselogimist Raportid -> Tootlus) ja vaata oma pensionifondi tootlust, 2) logi sisse [Tulevasse](https://pension.tuleva.ee/) (ei pea olema Tulevas koguja) ja näed oma pensionivara tootlust (saad muuhulgas võrrelda inflatsiooniga, Eesti pensionifondide keskmise tootlusega jne).
