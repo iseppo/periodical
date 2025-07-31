@@ -164,7 +164,7 @@ p <- fondide_tasud %>%
   theme_ipsum_rc()
 p
 ```
-NB! Jooksvad tasud on ajas muutuvad, siin on näidatud nende viimane seis, mis avaldatud Pensionikeskuses.
+NB! Jooksvad tasud on ajas muutuvad, siin on näidatud nende viimane seis, mis avaldatud Pensionikeskuses. Tuleva ühistu liikmena saaksid veel 5€ tagasi kickbacki oma liikmekapitali arvele.
 
 Aktiivselt juhitud fondid peavad indeksfondidega sammu pidamiseks ületama turukeskmist (ehk turuindeksit) rohkem, kui nende jooksvad tasud ületavad indeksfondi tasusid. Kogu minu argument on, et ajalooliselt ei ole nad keskmiselt seda suutnud. Kas võib olla erandeid? Võib, aga ma ei paneks oma raha selle alla. Vahur ja Endriko usuvad endasse rohkem.
 
