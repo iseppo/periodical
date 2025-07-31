@@ -194,11 +194,11 @@ inflatsioon_max <- inflatsioon %>%
       subtitle = "sõltuvalt sissepaneku aastast ja fondist",
       x = "raha sissepaneku aasta",
       y = "kasv tänaseks",
-      caption = paste(
-        "fondid seisuga",
+      caption = paste0(
+        "fondid seisuga ",
         maxdate,
         ", ",
-        "inflatsioon kuni",
+        "inflatsioon kuni ",
         inflatsioon_max,
         "\n",
         "allikad: Pensionikeskus, Statistikaamet\n",
