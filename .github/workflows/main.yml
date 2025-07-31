@@ -62,12 +62,12 @@ jobs:
         version: 'release'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
 
     # asendab 8 ja 9
-    - name: Cache & Restore R packages
+    - name: Cache & Restore R packages from renv.lock
       uses: r-lib/actions/setup-r-dependencies@v2
       with:
-        packages:
-          any::renv # Installib renv-i, kui vaja
-        cache-version: 1 # Hea praktika vahemälu versioneerimiseks
+        # Ära määra siin 'packages' parameetrit!
+        # Tegevus leiab ja kasutab automaatselt 'renv.lock' faili.
+        cache-version: 1
 
     # 10. Register hrbrthemes fonts in R (optional)
     - name: Register hrbrthemes fonts
