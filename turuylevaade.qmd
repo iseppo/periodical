@@ -270,7 +270,7 @@ p <- indeks_pikk %>%
   geom_line(aes(color = name)) +
   geom_blank(aes(x = min(Kuupäev), y = 0)) +
   geom_point(data = filter(indeks_pikk, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(indeks_pikk, Kuupäev == max(Kuupäev)), aes(label = value.pc), nudge_x = 170, color = "orange") +
+  geom_text(data = filter(indeks_pikk, Kuupäev == max(Kuupäev)), aes(label = value.pc), nudge_x = 200, color = "orange") +
   theme_ft_rc() +
   scale_color_ft("") +
   labs(title = "Mitu protsenti teise samba turust indeksfondides",
