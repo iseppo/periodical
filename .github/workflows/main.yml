@@ -42,7 +42,7 @@ jobs:
         echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
           | sudo debconf-set-selections
         export DEBIAN_FRONTEND=noninteractive
-
+        
     # 6. System dependencies & fonts
     - name: Install system dependencies & fonts
       run: |
@@ -53,13 +53,21 @@ jobs:
           libpng-dev libjpeg-dev libxml2-dev libproj-dev \
           ttf-mscorefonts-installer fonts-liberation \
           fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
-          pandoc
-
+          pandoc \
+          ffmpeg # --- UUS OSA: Lisatud ffmpeg video konverteerimiseks ---
+          
     # 7. Install Quarto CLI via official action
     - name: Install Quarto CLI
-      uses: quarto-dev/quarto-actions/setup@v2      # installs latest Quarto CLI :contentReference[oaicite:0]{index=0}
+      uses: quarto-dev/quarto-actions/setup@v2
       with:
-        version: 'release'                            # or pin a specific version like '1.7.30' :contentReference[oaicite:1]{index=1}
+        version: 'release'
+
+    # --- UUS OSA: Paigaldame Rust/Cargo {gifski} paketi jaoks ---
+    # See samm peab olema enne renv::restore(), et kompileerimine õnnestuks
+    - name: Install Rust toolchain (for Cargo)
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
 
     # 8. Cache the renv library
     - name: Cache renv library
@@ -69,18 +77,30 @@ jobs:
         key: ${{ runner.os }}-renv-${{ hashFiles('renv.lock') }}
         restore-keys: |
           ${{ runner.os }}-renv-
-
+          
     # 9. Restore R packages using renv
     - name: Restore R packages
       run: |
         Rscript -e "if (!requireNamespace('renv', quietly = TRUE)) install.packages('renv')"
         Rscript -e "renv::restore()"
-
+        
     # 10. Register hrbrthemes fonts in R (optional)
     - name: Register hrbrthemes fonts
       run: |
         Rscript -e "options(hrbrthemes.loadfonts=TRUE); library(hrbrthemes)"
-
+        
     # 11. Run your analysis script
-    - name: Run turuülevaade
-      run: Rscript run_turuylevaade.R
+    - name: Run NAV_kasv.R script
+      run: Rscript NAV_kasv.R
+
+    # 12. Run Quarto renders
+    - name: Render Quarto reports
+      run: |
+        quarto render turuylevaade.qmd
+        quarto render tuleva.qmd
+
+    # 13. Upload files to server
+    - name: Upload results to server
+      run: |
+        scp ./aastane_tulu_tuleva_lhv.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
+        scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
