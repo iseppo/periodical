@@ -235,8 +235,12 @@ Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin 
 
 Huvitav on seegi, kuidas see graafik üle aja muutunud on:
 
+<video width="100%" autoplay loop muted playsinline>
+<source src="aastane_tulu_animeeritud.mp4" type="video/mp4">
+Teie brauser ei toeta videotag'i. GIF-versiooni nägemiseks kliki <a href="aastane_tulu_animeeritud.gif">siia</a>.
+</video>
 
-![](aastane_tulu_animeeritud.gif){fig-alt="Animeeritud tootluse võrdlus LHV ja Tuleva vahel"}
+
 
 # Kust näha, kuidas on läinud sinul endal?
 
