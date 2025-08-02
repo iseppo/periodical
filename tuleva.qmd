@@ -233,6 +233,10 @@ Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin 
 
 ![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
 
+Huvitav on seegi, kuidas see graafik üle aja muutunud on:
+
+
+![](aastane_tulu_animeeritud.gif){fig-alt="Animeeritud tootluse võrdlus LHV ja Tuleva vahel"}
 
 # Kust näha, kuidas on läinud sinul endal?
 
