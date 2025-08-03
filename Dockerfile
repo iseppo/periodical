@@ -1,12 +1,11 @@
-# Alustame ametlikust Rocker'i ja Quarto pildist, mis sisaldab R-i, Pandoc-i ja Quartot
-# See katab sammud 4, 6 (osaliselt) ja 7
-FROM ghcr.io/rocker-org/quarto:latest
+# Alustame ametlikust Rocker'i ja Quarto pildist Docker Hubist
+FROM rocker/quarto:latest
 
 # Väldime interaktiivseid dialooge paigaldamise ajal
 ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Europe/Tallinn
 
 # Uuendame pakettide nimekirja ja paigaldame süsteemi sõltuvused ja fondid
-# See katab sammud 5 ja 6
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
     # SSH kliendi paigaldamine (vajalik scp jaoks)
@@ -27,7 +26,7 @@ RUN apt-get update -qq && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Paigaldame Rust/Cargo {gifski} paketi jaoks (samm UUS OSA)
+# Paigaldame Rust/Cargo {gifski} paketi jaoks
 RUN apt-get update -qq && apt-get install -y --no-install-recommends cargo && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -37,12 +36,11 @@ ENV R_LIBS_USER=/opt/R/renv/library
 # Kopeerime renv-i lukustusfaili pildile
 COPY renv.lock renv.lock
 
-# Paigaldame renv-i ja taastame kõik R-i paketid (sammud 8 ja 9)
-# See on pildi ehitamise kõige aeganõudvam osa
+# Paigaldame renv-i ja taastame kõik R-i paketid
 RUN Rscript -e "install.packages('renv')" && \
     Rscript -e "renv::restore()"
 
-# Registreerime hrbrthemes fondid R-is (samm 10)
+# Registreerime hrbrthemes fondid R-is
 RUN Rscript -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
 
 # Määrame töökataloogi, kuhu hiljem kood kopeeritakse
