@@ -549,30 +549,33 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     ease_aes('linear')
   
   # Salvestame GIF-i
-  gif_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".gif")
+#  gif_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".gif")
   mp4_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".mp4")
   
   message("Salvestan GIF-i: ", gif_fail)
   anim_save(
-    gif_fail,
+    mp4_fail,
     animation = p_anim,
     width = 800,
     height = 600,
-    renderer = gifski_renderer(loop = TRUE),
+    # Kasutame ffmpeg renderdajat
+    renderer = ffmpeg_renderer(
+      options = list(pix_fmt = 'yuv420p') # Hea ühilduvuse jaoks
+    ),
     nframes = dynamic_nframes,
     fps = anim_fps,
     end_pause = end_pause_frames
   )
   
   # Konverteerime MP4-ks
-  message("Konverdin GIF-i MP4-ks kasutades FFmpeg...")
-  ffmpeg_command <- paste0(
-    "ffmpeg -i ", shQuote(gif_fail),
-    " -movflags +faststart -pix_fmt yuv420p",
-    " -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2'",
-    " -y ", shQuote(mp4_fail)
-  )
-  system(ffmpeg_command)
+#  message("Konverdin GIF-i MP4-ks kasutades FFmpeg...")
+#  ffmpeg_command <- paste0(
+#    "ffmpeg -i ", shQuote(gif_fail),
+#    " -movflags +faststart -pix_fmt yuv420p",
+#    " -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2'",
+#    " -y ", shQuote(mp4_fail)
+#  )
+#  system(ffmpeg_command)
 }
 
 #' Genereerib kõik animatsioonid
