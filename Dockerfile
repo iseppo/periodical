@@ -6,8 +6,10 @@ ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Paigaldame kõik vajalikud süsteemi sõltuvused.
-# See käsk töötab, sest see ei lahenda keerulisi sõltuvusi.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Lülitame sisse 'contrib' ja 'non-free' repositooriumid, et leida MS fondid.
+RUN sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
     curl \
     pandoc \
     ssh-client \
@@ -15,29 +17,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev libssl-dev libxml2-dev libcairo2-dev \
     libfontconfig1-dev libfreetype6-dev libpng-dev libjpeg-dev libproj-dev \
     libudunits2-dev libgdal-dev libgeos-dev libssh-dev \
-    # Fondid
+    # Fondid ja Rust
     fonts-liberation fonts-roboto fonts-inter fonts-open-sans \
-    && rm -rf /var/lib/apt/lists/*
+    cargo \
+    # MS fondide EULA eelnev aktsepteerimine
+    && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
+    && apt-get install -y --no-install-recommends ttf-mscorefonts-installer \
+    # Puhastame vahemälu
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# --- QUARTO PAIGALDAMINE ILMA PAKETIHALDURITA ---
-# Laeme alla .tar.gz arhiivi, pakime lahti ja lisame PATH-i.
-# See väldib täielikult apt, dpkg ja gdebi kasutamist ning ka nendega seotud vigu.
+# Paigaldame Quarto, vältides süsteemi paketihaldurit.
 RUN QUARTO_VERSION="1.7.32" && \
     curl -o quarto.tar.gz -L "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.tar.gz" && \
     mkdir -p /opt/quarto && \
     tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1 && \
     rm quarto.tar.gz
 
-# Lisame Quarto binaarfailide kausta süsteemi PATH-i, et 'quarto' käsk oleks leitav.
+# Lisame Quarto binaarfailide kausta süsteemi PATH-i.
 ENV PATH="/opt/quarto/bin:${PATH}"
-
-# Jätkame ülejäänud sõltuvustega, mis kasutavad apt-i lihtsamal viisil.
-RUN apt-get update && \
-    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
-    apt-get install -y --no-install-recommends ttf-mscorefonts-installer && \
-    apt-get install -y --no-install-recommends cargo && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
 
 # Määrame töökataloogi ja kopeerime vajalikud failid.
 WORKDIR /build
