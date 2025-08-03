@@ -14,26 +14,25 @@ jobs:
       id-token: write
 
     steps:
-    # SAMM 1: Checkout'i kood (vajalik skriptide runner'ile saamiseks)
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # SAMM 2: Seadista SSH agent (täpselt nagu enne, see toimub runner'i peal)
     - name: Setup SSH agent
       uses: webfactory/ssh-agent@v0.9.1
       with:
         ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
 
-    # SAMM 3: Lisa serveri sõrmejälg (täpselt nagu enne)
     - name: Add server fingerprint
       run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
 
-    # SAMM 4: KÄIVITA KÕIK DOCKERIS
-    # See üks samm asendab kõik varasemad paigaldamise, vahemälu ja renv::restore sammud.
     - name: Run Analysis and Upload in Docker
       run: |
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
+          # --- OLULINE MUUDATUS ---
+          # See lülitab välja renv-i automaatse aktiveerimise,
+          # sundides R-i kasutama pildi sisse ehitatud pakette.
+          --env RENV_ACTIVE=FALSE \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
