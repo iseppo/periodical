@@ -6,9 +6,12 @@ ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Paigaldame kõik vajalikud süsteemi sõltuvused.
-# Lülitame sisse 'contrib' ja 'non-free' repositooriumid, et leida MS fondid.
-RUN sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list && \
+# Loome uue konfiguratsioonifaili, et lülitada sisse 'contrib' ja 'non-free' repositooriumid.
+RUN echo "deb http://deb.debian.org/debian testing main contrib non-free" > /etc/apt/sources.list.d/sources.list && \
     apt-get update && \
+    # MS fondide EULA eelnev aktsepteerimine
+    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
+    # Paigaldame kõik paketid üheskoos
     apt-get install -y --no-install-recommends \
     curl \
     pandoc \
@@ -19,10 +22,8 @@ RUN sed -i 's/main/main contrib non-free/g' /etc/apt/sources.list && \
     libudunits2-dev libgdal-dev libgeos-dev libssh-dev \
     # Fondid ja Rust
     fonts-liberation fonts-roboto fonts-inter fonts-open-sans \
+    ttf-mscorefonts-installer \
     cargo \
-    # MS fondide EULA eelnev aktsepteerimine
-    && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
-    && apt-get install -y --no-install-recommends ttf-mscorefonts-installer \
     # Puhastame vahemälu
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
