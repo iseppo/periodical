@@ -1,5 +1,5 @@
-# Alustame ametlikust R-i baaspildist.
-FROM r-base:4.3.3
+# Alustame täpselt õigest R-i stabiilsest versioonist.
+FROM r-base:4.5.1
 
 # Seadistame ajavööndi ja väldime interaktiivseid dialooge.
 ENV TZ=Europe/Tallinn
