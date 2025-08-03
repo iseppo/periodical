@@ -2,13 +2,12 @@
 FROM rocker/r-ver:4.5.1
 
 # Seadistame ajavööndi ja väldime interaktiivseid dialooge.
-# Rocker piltides on see sageli juba tehtud, aga topelt ei kärise.
 ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Rocker piltides on 'contrib' ja 'non-free' tihti juba olemas, aga igaks juhuks kontrollime.
-# See käsk on robustne ja töötab ka siis, kui muudatust pole vaja teha.
-RUN sed -i 's/Components: main/Components: main contrib non-free/g' /etc/apt/sources.list.d/debian.sources && \
+# Paigaldame kõik vajalikud süsteemi sõltuvused.
+# Muudame Rocker pildi traditsioonilist sources.list faili, et lisada 'contrib' ja 'non-free'.
+RUN sed -i 's/main$/main contrib non-free/g' /etc/apt/sources.list && \
     apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
     apt-get install -y --no-install-recommends \
@@ -44,7 +43,6 @@ COPY renv.lock .
 RUN R -e "install.packages('renv')"
 
 # Taastame R-i paketid. Rocker pildid on juba seadistatud kasutama Positi binaarset repositooriumi.
-# Selguse mõttes jätame options() käsu alles.
 RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/bookworm/latest')); renv::restore()"
 
 # Registreerime hrbrthemes fondid R-is.
