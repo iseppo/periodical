@@ -561,7 +561,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     renderer = ffmpeg_renderer(
       options = list(pix_fmt = 'yuv420p') # Hea ühilduvuse jaoks
     ),
-    nframes = dynamic_nframes,
+    nframes = dynamic_nframes + end_pause_frames,
     fps = anim_fps,
     end_pause = end_pause_frames
   )
@@ -782,7 +782,7 @@ main <- function(generate_tuleva_version_arg = FALSE) {
   generate_static_charts()
   
   # Kontrollime, kas animatsioon vajab uuendamist
-  if (should_update_animation("aastane_tulu_animeeritud.gif")) {
+  if (should_update_animation("aastane_tulu_animeeritud.gmp4")) {
     generate_all_animations(create_tuleva_only_version = create_tuleva_version)
   } else {
     message("Animeeritud graafikud on selle nädala seisuga värsked. Jätame uuendamise vahele.")
