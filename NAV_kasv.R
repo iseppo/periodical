@@ -1,5 +1,5 @@
 #-------------------------------------------------------------------------------
-# PENSIONIFONDIDE ANALÜÜSI JA VISUALISEERIMISE SKRIPT
+# PENSIONIFONDIDE ANALÜÜSI JA VISUALISEERIMISE SKRIPT - PARALLELISEERITUD
 #-------------------------------------------------------------------------------
 
 # 1. OSA: VAJALIKE PAKETTIDE LAADIMINE
@@ -18,8 +18,13 @@ suppressPackageStartupMessages({
   library(ggfittext)
   library(gganimate)
   library(gifski)
+  library(future)         # Paralleliseerimise tugi
+  library(furrr)          # Paralleelne purrr
+  library(parallel)       # Tuumade arvu tuvastamine
 })
 
+# Seadista paralleliseerimine 2 tuumaga
+plan(multisession, workers = 2)
 
 #-------------------------------------------------------------------------------
 # 2. OSA: STAATILISTE GRAAFIKUTE GENEREERIMINE
@@ -58,6 +63,21 @@ generate_static_charts <- function() {
     df |> mutate(indeks = (last_infl / indeks - 1) * 100) |>
       select(date, indeks) |> rename(Kuupäev = date, value = indeks) |> mutate(name = "inflatsioon")
   }
+  
+  # PARALLEELNE ANDMETE LAADIMINE
+  message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
+  load_start <- Sys.time()
+  
+  # Käivita mõlemad laadimised paralleelselt
+  nav_future <- future({ get_nav_data_static() })
+  inflation_future <- future({ get_inflation_data_static() })
+  
+  # Oota mõlemad tulemused
+  navid <- value(nav_future)
+  inflation <- value(inflation_future)
+  
+  load_end <- Sys.time()
+  message(paste("Paralleelne laadimine võttis:", round(difftime(load_end, load_start, units = "secs"), 2), "sekundit"))
   
   # --- Andmete arvutamise funktsioon ---
   compute_returns <- function(navid) {
@@ -109,9 +129,7 @@ generate_static_charts <- function() {
     ggsave(p_aastane_tulu, file = "aastane_tulu_tuleva_lhv.png", height = 5, width = 7, scale = 1.1, bg = "white")
   }
   
-  navid <- get_nav_data_static()
   returns <- compute_returns(navid)
-  inflation <- get_inflation_data_static()
   plot_charts(returns$pikk, inflation, returns$date)
   message("--- Staatilised graafikud valmis ---")
 }
@@ -136,7 +154,6 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
   
   scaffold <- tidyr::expand_grid(seisuga_kp=kaadrite_kuupaevad, aasta=as.character(2017:year(lopp_kp)), name=all_series_names)
   
-  # *** MUUDATUS ALGAB SIIN ***
   animeeritud_andmed_final <- scaffold %>%
     left_join(anim_data_subset, by=c("seisuga_kp","aasta","name")) %>%
     mutate(
@@ -144,12 +161,8 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
       name=factor(name, levels = series_order),
       aasta=factor(aasta,levels=as.character(2017:year(lopp_kp)))
     ) %>%
-    # Järjesta andmed õigesti (Tuleva enne inflatsiooni iga aasta ja kuupäeva kohta)
     arrange(seisuga_kp, aasta, name) %>%
-    # Loo group_id ja muuda see faktoriks, mille tasemed on soovitud järjekorras.
-    # See sunnib ggplot-i joonistama tulbad õiges järjekorras.
     mutate(group_id = factor(paste(aasta, name), levels = unique(paste(aasta, name))))
-  # *** MUUDATUS LÕPPEB SIIN ***
   
   anim_fps <- 10
   
@@ -195,38 +208,138 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
 generate_all_animations <- function(create_tuleva_only_version = FALSE) {
   message("--- Alustan animeeritud graafikute genereerimist ---")
   
-  get_nav_data_anim <- function() { message("Animatsioon: Laen fondide andmeid..."); date_to <- today(); url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2017-03-28&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=38&f%5B2%5D=77&f%5B3%5D=EPI&f%5B4%5D=73"); navid_raw <- read.csv2(url, fileEncoding = "UTF-16", header = TRUE, sep = "\t"); navid <- navid_raw %>% select(Kuupäev, Fond, NAV) %>% pivot_wider(names_from = Fond, values_from = NAV) %>% filter(!is.na(`Tuleva Maailma Aktsiate Pensionifond`), !is.na(`II samba üldindeks`)); navid$Kuupäev <- dmy(navid$Kuupäev); return(navid) }
-  get_inflation_data_raw_anim <- function() { message("Animatsioon: Laen inflatsiooni andmeid..."); url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"; query_body <- list(query = list(list(code="Aasta", selection=list(filter="item", values=I(2017:year(today())))), list(code="Kaubagrupp", selection=list(filter="item", values=I(c("1"))))), response=list(format="csv2")); response <- POST(url, body = toJSON(query_body, auto_unbox = TRUE), add_headers("Content-Type" = "application/json")); csv_data <- content(response, "text", encoding = "UTF-8"); month_lookup <- c("Jaanuar"=1,"Veebruar"=2,"Märts"=3,"Aprill"=4,"Mai"=5,"Juuni"=6,"Juuli"=7,"August"=8,"September"=9,"Oktoober"=10,"November"=11,"Detsember"=12); df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) |> rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) |> mutate(indeks = as.numeric(indeks), kuu = as.integer(month_lookup[Kuu]), date = as.Date(paste(Aasta, kuu, "01", sep = "-"))) |> arrange(date) |> filter(date > dmy("01-03-2017"), !is.na(indeks)); return(df) }
-  arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp, nav_data, inflation_data) { navid_filt <- nav_data %>% filter(Kuupäev <= andmete_seisuga_kp); infl_filt <- inflation_data %>% filter(date <= andmete_seisuga_kp); if (nrow(navid_filt) < 2 || nrow(infl_filt) < 2) return(NULL); last_navs <- navid_filt %>% filter(Kuupäev == max(Kuupäev)) %>% slice(1); last_infl <- infl_filt %>% filter(date == max(date)) %>% pull(indeks); navid_kuu <- navid_filt %>% group_by(Kuupäev=floor_date(Kuupäev,"month")) %>% summarize(across(where(is.numeric),~mean(.x,na.rm=TRUE)),.groups="drop") %>% mutate(Tuleva=100*(last_navs$`Tuleva Maailma Aktsiate Pensionifond`/`Tuleva Maailma Aktsiate Pensionifond`-1), LHVXL=100*(last_navs$`LHV Pensionifond XL`/`LHV Pensionifond XL`-1), LHVL=100*(last_navs$`LHV Pensionifond L`/`LHV Pensionifond L`-1)) %>% select(Kuupäev, Tuleva, LHVXL, LHVL) %>% pivot_longer(cols=-Kuupäev, names_to="name", values_to="value"); infl_tootlus <- infl_filt %>% mutate(value=(last_infl/indeks-1)*100) %>% select(date, value) %>% rename(Kuupäev=date) %>% mutate(name="inflatsioon"); bind_rows(navid_kuu, infl_tootlus) %>% filter(!is.na(value), is.finite(value), year(Kuupäev) <= year(andmete_seisuga_kp)) %>% group_by(aasta=as.character(year(Kuupäev)), name) %>% summarize(value=mean(value, na.rm=TRUE), .groups="drop") %>% mutate(seisuga_kp=andmete_seisuga_kp) }
+  # Funktsioonid jäävad samaks, lisame ainult paralleliseerimise
+  get_nav_data_anim <- function() { 
+    message("Animatsioon: Laen fondide andmeid..."); 
+    date_to <- today(); 
+    url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2017-03-28&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=38&f%5B2%5D=77&f%5B3%5D=EPI&f%5B4%5D=73"); 
+    navid_raw <- read.csv2(url, fileEncoding = "UTF-16", header = TRUE, sep = "\t"); 
+    navid <- navid_raw %>% select(Kuupäev, Fond, NAV) %>% pivot_wider(names_from = Fond, values_from = NAV) %>% filter(!is.na(`Tuleva Maailma Aktsiate Pensionifond`), !is.na(`II samba üldindeks`)); 
+    navid$Kuupäev <- dmy(navid$Kuupäev); 
+    return(navid) 
+  }
   
-  nav_data <- get_nav_data_anim()
-  inflation_data_raw <- get_inflation_data_raw_anim()
+  get_inflation_data_raw_anim <- function() { 
+    message("Animatsioon: Laen inflatsiooni andmeid..."); 
+    url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"; 
+    query_body <- list(query = list(list(code="Aasta", selection=list(filter="item", values=I(2017:year(today())))), list(code="Kaubagrupp", selection=list(filter="item", values=I(c("1"))))), response=list(format="csv2")); 
+    response <- POST(url, body = toJSON(query_body, auto_unbox = TRUE), add_headers("Content-Type" = "application/json")); 
+    csv_data <- content(response, "text", encoding = "UTF-8"); 
+    month_lookup <- c("Jaanuar"=1,"Veebruar"=2,"Märts"=3,"Aprill"=4,"Mai"=5,"Juuni"=6,"Juuli"=7,"August"=8,"September"=9,"Oktoober"=10,"November"=11,"Detsember"=12); 
+    df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) |> 
+      rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) |> 
+      mutate(indeks = as.numeric(indeks), kuu = as.integer(month_lookup[Kuu]), date = as.Date(paste(Aasta, kuu, "01", sep = "-"))) |> 
+      arrange(date) |> filter(date > dmy("01-03-2017"), !is.na(indeks)); 
+    return(df) 
+  }
+  
+  arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp, nav_data, inflation_data) { 
+    navid_filt <- nav_data %>% filter(Kuupäev <= andmete_seisuga_kp); 
+    infl_filt <- inflation_data %>% filter(date <= andmete_seisuga_kp); 
+    if (nrow(navid_filt) < 2 || nrow(infl_filt) < 2) return(NULL); 
+    last_navs <- navid_filt %>% filter(Kuupäev == max(Kuupäev)) %>% slice(1); 
+    last_infl <- infl_filt %>% filter(date == max(date)) %>% pull(indeks); 
+    navid_kuu <- navid_filt %>% 
+      group_by(Kuupäev=floor_date(Kuupäev,"month")) %>% 
+      summarize(across(where(is.numeric),~mean(.x,na.rm=TRUE)),.groups="drop") %>% 
+      mutate(Tuleva=100*(last_navs$`Tuleva Maailma Aktsiate Pensionifond`/`Tuleva Maailma Aktsiate Pensionifond`-1), 
+             LHVXL=100*(last_navs$`LHV Pensionifond XL`/`LHV Pensionifond XL`-1), 
+             LHVL=100*(last_navs$`LHV Pensionifond L`/`LHV Pensionifond L`-1)) %>% 
+      select(Kuupäev, Tuleva, LHVXL, LHVL) %>% 
+      pivot_longer(cols=-Kuupäev, names_to="name", values_to="value"); 
+    infl_tootlus <- infl_filt %>% 
+      mutate(value=(last_infl/indeks-1)*100) %>% 
+      select(date, value) %>% 
+      rename(Kuupäev=date) %>% 
+      mutate(name="inflatsioon"); 
+    bind_rows(navid_kuu, infl_tootlus) %>% 
+      filter(!is.na(value), is.finite(value), year(Kuupäev) <= year(andmete_seisuga_kp)) %>% 
+      group_by(aasta=as.character(year(Kuupäev)), name) %>% 
+      summarize(value=mean(value, na.rm=TRUE), .groups="drop") %>% 
+      mutate(seisuga_kp=andmete_seisuga_kp) 
+  }
+  
+  # PARALLEELNE ANDMETE LAADIMINE
+  message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
+  load_start <- Sys.time()
+  
+  nav_future <- future({ get_nav_data_anim() })
+  inflation_future <- future({ get_inflation_data_raw_anim() })
+  
+  nav_data <- value(nav_future)
+  inflation_data_raw <- value(inflation_future)
+  
+  load_end <- Sys.time()
+  message(paste("Paralleelne laadimine võttis:", round(difftime(load_end, load_start, units = "secs"), 2), "sekundit"))
+  
   lopp_kp <- max(nav_data$Kuupäev)
   kuude_algused <- seq.Date(from=ymd("2018-01-01"), to=lopp_kp, by="1 month")
   kaadrite_kuupaevad <- union(kuude_algused, lopp_kp)
-  animeeritud_andmed_raw <- purrr::map_df(kaadrite_kuupaevad, ~arvuta_aastane_tootlus_hetkes(.x, nav_data, inflation_data_raw))
   
-  # 1. Loo vaikimisi animatsioon
-  create_specific_animation(
-    animeeritud_andmed_raw = animeeritud_andmed_raw,
-    kaadrite_kuupaevad = kaadrite_kuupaevad,
-    lopp_kp = lopp_kp,
-    funds_to_include = c("LHVL", "LHVXL", "Tuleva"),
-    series_order = c("LHVL", "LHVXL", "Tuleva", "inflatsioon"),
-    file_suffix = "",
-    plot_subtitle = "Võrdluses LHV XL, LHV L, Tuleva ja inflatsioon"
+  # PARALLEELNE ANIMATSIOONI KAADRITE ARVUTAMINE
+  message("Arvutan animatsiooni kaadreid paralleelselt...")
+  calc_start <- Sys.time()
+  
+  # Jagame kuupäevad pooleks optimaalseks jaotuseks kahe tuuma vahel
+  split_dates <- split(kaadrite_kuupaevad, cut(seq_along(kaadrite_kuupaevad), 2, labels = FALSE))
+  
+  # Arvutame mõlemad pooled paralleelselt
+  animeeritud_andmed_raw <- future_map_dfr(
+    kaadrite_kuupaevad,
+    ~arvuta_aastane_tootlus_hetkes(.x, nav_data, inflation_data_raw),
+    .options = furrr_options(seed = 123)
   )
   
-  # 2. Loo "Tuleva ainult" animatsioon, kui vaja
+  calc_end <- Sys.time()
+  message(paste("Paralleelne arvutamine võttis:", round(difftime(calc_end, calc_start, units = "secs"), 2), "sekundit"))
+  
+  # KUI TEHAKSE MITU ANIMATSIOONI, SIIS PARALLEELSELT
   if (create_tuleva_only_version) {
+    # Loome mõlemad animatsioonid paralleelselt
+    anim_start <- Sys.time()
+    
+    # Vaikimisi animatsioon
+    default_anim_future <- future({
+      create_specific_animation(
+        animeeritud_andmed_raw = animeeritud_andmed_raw,
+        kaadrite_kuupaevad = kaadrite_kuupaevad,
+        lopp_kp = lopp_kp,
+        funds_to_include = c("LHVL", "LHVXL", "Tuleva"),
+        series_order = c("LHVL", "LHVXL", "Tuleva", "inflatsioon"),
+        file_suffix = "",
+        plot_subtitle = "Võrdluses LHV XL, LHV L, Tuleva ja inflatsioon"
+      )
+    })
+    
+    # Tuleva ainult animatsioon
+    tuleva_anim_future <- future({
+      create_specific_animation(
+        animeeritud_andmed_raw = animeeritud_andmed_raw,
+        kaadrite_kuupaevad = kaadrite_kuupaevad,
+        lopp_kp = lopp_kp,
+        funds_to_include = c("Tuleva"),
+        series_order = c("Tuleva", "inflatsioon"),
+        file_suffix = "_tuleva_ainult",
+        plot_subtitle = "Võrdluses Tuleva ja inflatsioon"
+      )
+    })
+    
+    # Oota mõlemad valmis
+    value(default_anim_future)
+    value(tuleva_anim_future)
+    
+    anim_end <- Sys.time()
+    message(paste("Paralleelsed animatsioonid valmis:", round(difftime(anim_end, anim_start, units = "secs"), 2), "sekundit"))
+  } else {
+    # Ainult vaikimisi animatsioon
     create_specific_animation(
       animeeritud_andmed_raw = animeeritud_andmed_raw,
       kaadrite_kuupaevad = kaadrite_kuupaevad,
       lopp_kp = lopp_kp,
-      funds_to_include = c("Tuleva"),
-      series_order = c("Tuleva", "inflatsioon"),
-      file_suffix = "_tuleva_ainult",
-      plot_subtitle = "Võrdluses Tuleva ja inflatsioon"
+      funds_to_include = c("LHVL", "LHVXL", "Tuleva"),
+      series_order = c("LHVL", "LHVXL", "Tuleva", "inflatsioon"),
+      file_suffix = "",
+      plot_subtitle = "Võrdluses LHV XL, LHV L, Tuleva ja inflatsioon"
     )
   }
   
@@ -248,6 +361,8 @@ should_update_animation <- function(filepath) {
 
 main <- function(generate_tuleva_version_arg = FALSE) {
   
+  total_start <- Sys.time()
+  
   cmd_args <- commandArgs(trailingOnly = TRUE)
   cmd_flag_present <- "--tuleva-ainult" %in% cmd_args
   
@@ -257,6 +372,9 @@ main <- function(generate_tuleva_version_arg = FALSE) {
     message("Parameeter on aktiveeritud. Genereeritakse ka ainult Tulevaga animatsioon.")
   }
   
+  # Näita tuumade arvu
+  message(paste("Kasutan", future::nbrOfWorkers(), "tuuma paralleliseerimiseks"))
+  
   generate_static_charts()
   
   if (should_update_animation("aastane_tulu_animeeritud.gif")) {
@@ -265,6 +383,8 @@ main <- function(generate_tuleva_version_arg = FALSE) {
     message("Animeeritud graafikud on selle nädala seisuga värsked. Jätame uuendamise vahele.")
   }
   
+  total_end <- Sys.time()
+  message(paste("\nSkripti kogu töö võttis:", round(difftime(total_end, total_start, units = "secs"), 2), "sekundit"))
   message("Skripti töö on lõppenud.")
 }
 
@@ -273,3 +393,6 @@ main <- function(generate_tuleva_version_arg = FALSE) {
 # source("sinu_skripti_nimi.R")
 main() # Tavalise versiooni jaoks
 # main(generate_tuleva_version_arg = TRUE) # Mõlema versiooni jaoks
+
+# Lõpetamisel sulge paralleliseerimine
+on.exit(plan(sequential))
