@@ -8,21 +8,23 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Paigaldame Quarto eeltingimused ja muud vajalikud tööriistad
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    gdebi-core \
     pandoc \
     ssh-client \
     # Süsteemi sõltuvused R-i pakettidele
     libcurl4-openssl-dev libssl-dev libxml2-dev libcairo2-dev \
     libfontconfig1-dev libfreetype6-dev libpng-dev libjpeg-dev libproj-dev \
     libudunits2-dev libgdal-dev libgeos-dev libssh-dev \
-    # Fondid (probleemne 'fonts-ibm-plex' on eemaldatud)
+    # Fondid
     fonts-liberation fonts-roboto fonts-inter fonts-open-sans \
     && rm -rf /var/lib/apt/lists/*
 
-# Paigaldame Quarto käsitsi
-RUN QUARTO_VERSION="1.4.554" && \
+# Paigaldame Quarto käsitsi, kasutades õiget versiooni ja robustset dpkg meetodit
+RUN QUARTO_VERSION="1.7.32" && \
     curl -o quarto.deb -L "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.deb" && \
-    gdebi --non-interactive quarto.deb && \
+    # Kasutame dpkg paigaldamiseks. See võib ebaõnnestuda, aga järgmine käsk parandab selle.
+    dpkg -i quarto.deb || true && \
+    # apt-get -f install parandab kõik puuduvad sõltuvused automaatselt.
+    apt-get install -f -y --no-install-recommends && \
     rm quarto.deb
 
 # Paigaldame MS fondid eraldi, kuna see on tülikas
@@ -36,7 +38,6 @@ RUN apt-get update && \
 RUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Määrame töökataloogi ja kopeerime vajalikud failid
-# NB! Muudetud, et vältida kogu repo kopeerimist liiga vara
 WORKDIR /build
 COPY renv.lock .
 
