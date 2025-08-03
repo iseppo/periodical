@@ -459,7 +459,6 @@ create_specific_animation <- function(animeeritud_andmed_raw,
                                       series_order, 
                                       file_suffix, 
                                       plot_subtitle) {
-  
   message(paste("--- Loon animatsiooni failidele lõpuga:", file_suffix, "---"))
   
   # Filtreerime andmed
@@ -547,35 +546,32 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     transition_time(seisuga_kp) +
     ease_aes('linear')
   
-  # Salvestame GIF-i
-#  gif_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".gif")
-  mp4_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".mp4")
+  # Failinimed
+  mp4_input  <- paste0("aastane_tulu_animeeritud2", file_suffix, ".mp4")
+  mp4_output <- paste0("aastane_tulu_animeeritud",  file_suffix, ".mp4")
   
-  message("Salvestan mp4: ", mp4_fail)
+  message("Salvestan MP4: ", mp4_input)
   anim_save(
-    mp4_fail,
+    mp4_input,
     animation = p_anim,
-    width = 800,
-    height = 600,
-    # Kasutame ffmpeg renderdajat
-    renderer = ffmpeg_renderer(
-      options = list(pix_fmt = 'yuv420p') # Hea ühilduvuse jaoks
-    ),
-    nframes = dynamic_nframes + end_pause_frames,
-    fps = anim_fps,
+    width     = 800,
+    height    = 600,
+    renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p')),
+    nframes   = dynamic_nframes,
+    fps       = anim_fps,
     end_pause = end_pause_frames
   )
   
-  # Konverteerime MP4-ks
-#  message("Konverdin GIF-i MP4-ks kasutades FFmpeg...")
-#  ffmpeg_command <- paste0(
-#    "ffmpeg -i ", shQuote(gif_fail),
-#    " -movflags +faststart -pix_fmt yuv420p",
-#    " -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2'",
-#    " -y ", shQuote(mp4_fail)
-#  )
-#  system(ffmpeg_command)
-}
+  message("Lisame 10-sekundilise lõpuffiltri: ", mp4_input, " -> ", mp4_output)
+  # Lisame 10 sekundit lõppu
+  system(paste(
+    "ffmpeg",
+    "-i", shQuote(mp4_input),
+    "-vf", "tpad=stop_mode=clone:stop_duration=10",
+    "-c:a copy",
+    shQuote(mp4_output)
+  ))
+} 
 
 #' Genereerib kõik animatsioonid
 #' 
@@ -740,22 +736,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
 #' @param filepath Animatsiooni faili asukoht
 #' @return TRUE kui vajab uuendamist, FALSE muul juhul
 should_update_animation <- function(filepath) {
-  # Kontrollime faili olemasolu
-  if (!file.exists(filepath)) {
-    message("Animatsiooni faili ", filepath, " ei leitud. Loome uue.")
-    return(TRUE)
-  }
-  
-  # Kontrollime faili vanust
-  last_mod_time <- file.mtime(filepath)
-  start_of_this_week <- floor_date(today(), "week", week_start = 1)
-  
-  if (last_mod_time < start_of_this_week) {
-    message("Animatsioon on eelmisest nädalast. Värskendame.")
-    return(TRUE)
-  }
-  
-  return(FALSE)
+  return(TRUE)
 }
 
 #' Peamine käivitamise funktsioon
@@ -782,7 +763,7 @@ main <- function(generate_tuleva_version_arg = FALSE) {
   generate_static_charts()
   
   # Kontrollime, kas animatsioon vajab uuendamist
-  if (should_update_animation("aastane_tulu_animeeritud.gmp4")) {
+  if (should_update_animation("aastane_tulu_animeeritud.mp4")) {
     generate_all_animations(create_tuleva_only_version = create_tuleva_version)
   } else {
     message("Animeeritud graafikud on selle nädala seisuga värsked. Jätame uuendamise vahele.")
