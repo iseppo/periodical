@@ -498,9 +498,9 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     )
   
   # Animatsiooni parameetrid
-  anim_fps <- 10
+  anim_fps <- 15
   anim_pause_sec <- 10
-  dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1.5
+  dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
   end_pause_frames <- anim_pause_sec * anim_fps
   
   # Kuupäeva sildid animatsiooni jaoks
@@ -532,7 +532,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
       fontface = "bold"
     ) +
     scale_fill_manual(name = "Võrdlus:", values = active_colors) +
-    theme_ipsum_rc(base_size = 16) +
+    theme_ipsum_rc(base_size = 20) +
     scale_y_continuous(
       labels = scales::percent,
       limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1.02/100)
