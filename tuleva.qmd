@@ -8,6 +8,7 @@ language:
   title-block-published: "Uuendatud"
 format:
   html:
+    toc: true
     self-contained: true
     include-in-header: analytics.html
     include-after-body: footer.html
