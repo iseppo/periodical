@@ -6,8 +6,8 @@ ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Paigaldame kõik vajalikud süsteemi sõltuvused.
-# Loome uue konfiguratsioonifaili, et lülitada sisse 'contrib' ja 'non-free' repositooriumid.
-RUN echo "deb http://deb.debian.org/debian testing main contrib non-free" > /etc/apt/sources.list.d/sources.list && \
+# Muudame olemasolevat ja korrektset konfiguratsioonifaili, et lisada 'contrib' ja 'non-free'.
+RUN sed -i 's/Components: main/Components: main contrib non-free/g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
     # MS fondide EULA eelnev aktsepteerimine
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
