@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev libssl-dev libxml2-dev libcairo2-dev \
     libfontconfig1-dev libfreetype6-dev libpng-dev libjpeg-dev libproj-dev \
     libudunits2-dev libgdal-dev libgeos-dev libssh-dev \
-    # Fondid
-    fonts-liberation fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
+    # Fondid (probleemne 'fonts-ibm-plex' on eemaldatud)
+    fonts-liberation fonts-roboto fonts-inter fonts-open-sans \
     && rm -rf /var/lib/apt/lists/*
 
 # Paigaldame Quarto käsitsi
@@ -36,6 +36,7 @@ RUN apt-get update && \
 RUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Määrame töökataloogi ja kopeerime vajalikud failid
+# NB! Muudetud, et vältida kogu repo kopeerimist liiga vara
 WORKDIR /build
 COPY renv.lock .
 
@@ -46,5 +47,6 @@ RUN R -e "renv::restore()"
 # Registreerime hrbrthemes fondid R-is
 RUN R -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
 
-# Kopeerime ülejäänud koodi
+# Kopeerime ülejäänud koodi alles päris lõpus
+WORKDIR /home/rstudio/project
 COPY . .
