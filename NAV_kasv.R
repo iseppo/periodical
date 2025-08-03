@@ -557,6 +557,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     width     = 800,
     height    = 600,
     renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p')),
+    overwrite = TRUE, 
     nframes   = dynamic_nframes,
     fps       = anim_fps,
     end_pause = end_pause_frames
@@ -566,6 +567,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
   # Lisame 10 sekundit lõppu
   system(paste(
     "ffmpeg",
+    "-y", 
     "-i", shQuote(mp4_input),
     "-vf", "tpad=stop_mode=clone:stop_duration=10",
     "-c:a copy",
