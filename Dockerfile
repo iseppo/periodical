@@ -27,7 +27,6 @@ RUN sed -i 's/main$/main contrib non-free/g' /etc/apt/sources.list && \
     # Fondid ja Rust
     fonts-liberation fonts-roboto fonts-inter fonts-open-sans \
     ttf-mscorefonts-installer \
-    cargo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Paigaldame Quarto, vältides süsteemi paketihaldurit.

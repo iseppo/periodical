@@ -29,7 +29,6 @@ suppressPackageStartupMessages({
   library(hrbrthemes)    # Teema graafikutele
   library(ggfittext)     # Teksti paigutamine graafikutel
   library(gganimate)     # Animatsioonid
-  library(gifski)        # GIF genereerimine
   
   # Paralleliseerimine
   library(future)        # Paralleelarvutused
@@ -552,7 +551,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
 #  gif_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".gif")
   mp4_fail <- paste0("aastane_tulu_animeeritud", file_suffix, ".mp4")
   
-  message("Salvestan GIF-i: ", gif_fail)
+  message("Salvestan mp4: ", mp4_fail)
   anim_save(
     mp4_fail,
     animation = p_anim,
