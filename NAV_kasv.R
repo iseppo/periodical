@@ -135,14 +135,21 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
   active_colors <- color_palette[names(color_palette) %in% all_series_names]
   
   scaffold <- tidyr::expand_grid(seisuga_kp=kaadrite_kuupaevad, aasta=as.character(2017:year(lopp_kp)), name=all_series_names)
-  animeeritud_andmed_final <- scaffold %>% 
+  
+  # *** MUUDATUS ALGAB SIIN ***
+  animeeritud_andmed_final <- scaffold %>%
     left_join(anim_data_subset, by=c("seisuga_kp","aasta","name")) %>%
     mutate(
-      value=if_else(is.na(value),0,value), 
-      group_id=paste(aasta,name), 
-      name=factor(name, levels = series_order), 
+      value=if_else(is.na(value),0,value),
+      name=factor(name, levels = series_order),
       aasta=factor(aasta,levels=as.character(2017:year(lopp_kp)))
-    )
+    ) %>%
+    # Järjesta andmed õigesti (Tuleva enne inflatsiooni iga aasta ja kuupäeva kohta)
+    arrange(seisuga_kp, aasta, name) %>%
+    # Loo group_id ja muuda see faktoriks, mille tasemed on soovitud järjekorras.
+    # See sunnib ggplot-i joonistama tulbad õiges järjekorras.
+    mutate(group_id = factor(paste(aasta, name), levels = unique(paste(aasta, name))))
+  # *** MUUDATUS LÕPPEB SIIN ***
   
   anim_fps <- 10
   
@@ -159,7 +166,7 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
     ) +
     scale_fill_manual(name="Võrdlus:", values=active_colors) +
     theme_ipsum_rc() +
-    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.02/100)) + 
+    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.03/100)) + 
     theme(legend.position="top") +
     labs(
       title="Kui palju on keskmiselt kasvanud raha?",
@@ -181,7 +188,6 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
   anim_save(gif_fail, animation=p_anim, width=800, height=600, renderer=gifski_renderer(loop=TRUE), nframes = dynamic_nframes, fps=anim_fps, end_pause = end_pause_frames)
   
   message("Konverdin GIF-i MP4-ks kasutades FFmpeg...")
-  # Kasutame shQuote, et failinimed oleksid turvalised ka tühikute jms korral
   ffmpeg_command <- paste0("ffmpeg -i ", shQuote(gif_fail), " -movflags +faststart -pix_fmt yuv420p -vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' -y ", shQuote(mp4_fail))
   system(ffmpeg_command)
 }
@@ -218,8 +224,6 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
       kaadrite_kuupaevad = kaadrite_kuupaevad,
       lopp_kp = lopp_kp,
       funds_to_include = c("Tuleva"),
-      # **** MUUDATUS ON SIIN ****
-      # Seame järjekorra nii, et Tuleva on esimene ja inflatsioon teine.
       series_order = c("Tuleva", "inflatsioon"),
       file_suffix = "_tuleva_ainult",
       plot_subtitle = "Võrdluses Tuleva ja inflatsioon"
@@ -264,5 +268,8 @@ main <- function(generate_tuleva_version_arg = FALSE) {
   message("Skripti töö on lõppenud.")
 }
 
+# Skripti käivitamiseks käsurealt: Rscript sinu_skripti_nimi.R
+# Või interaktiivselt R-i konsoolis:
+# source("sinu_skripti_nimi.R")
 main() # Tavalise versiooni jaoks
 # main(generate_tuleva_version_arg = TRUE) # Mõlema versiooni jaoks
