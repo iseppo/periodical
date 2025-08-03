@@ -29,9 +29,6 @@ jobs:
       run: |
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
-          # --- OLULINE MUUDATUS ---
-          # See lülitab välja renv-i automaatse aktiveerimise,
-          # sundides R-i kasutama pildi sisse ehitatud pakette.
           --env RENV_ACTIVE=FALSE \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
