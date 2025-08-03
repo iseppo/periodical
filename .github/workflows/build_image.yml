@@ -33,7 +33,7 @@ jobs:
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        password: ${{ secrets.DOCKERHUB_TOKEN2 }}
         # Jätame registri tühjaks, vaikimisi on see Docker Hub (docker.io)
 
     - name: Log in to the GitHub Container Registry
