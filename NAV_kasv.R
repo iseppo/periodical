@@ -126,7 +126,18 @@ generate_static_charts <- function() {
       theme_ipsum_rc() + scale_y_percent() +
       labs(title="Kui palju on keskmiselt kasvanud tänaseks raha", subtitle="sõltuvalt sissepaneku aastast ja fondist", x="raha sissepaneku aasta", y="kasv tänaseks", caption=paste0("fondid seisuga ", maxdate, ", inflatsioon kuni ", inflatsioon_max, "\nallikad: Pensionikeskus, Statistikaamet\nligikaudsed arvutused: Indrek Seppo")) +
       theme(legend.position = "top")
-    ggsave(p_aastane_tulu, file = "aastane_tulu_tuleva_lhv.png", height = 5, width = 7, scale = 1.1, bg = "white")
+    
+    ggsave(
+      p_aastane_tulu, 
+      file = "aastane_tulu_tuleva_lhv.png", 
+      width = 800, 
+      height = 600, 
+      units = "px", 
+      dpi = 300, 
+      bg = "white",
+      scale = 2.5
+    )
+    
   }
   
   returns <- compute_returns(navid)
@@ -178,7 +189,7 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
       inherit.aes = FALSE, hjust = 1.1, vjust = 1.5, size = 14, color = "grey75", fontface = "bold"
     ) +
     scale_fill_manual(name="Võrdlus:", values=active_colors) +
-    theme_ipsum_rc() +
+    theme_ipsum_rc(base_size = 16) +
     scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.02/100)) + 
     theme(legend.position="top") +
     labs(
