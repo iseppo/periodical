@@ -29,12 +29,15 @@ jobs:
       run: |
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
-          --env RENV_CONFIG_USER_PROFILE=FALSE \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
           ghcr.io/iseppo/periodical:main \
           bash -c "
+            echo '--- Temporarily disabling renv by renaming trigger files ---'
+            [ -f .Rprofile ] && mv .Rprofile .Rprofile.bak
+            [ -d renv ] && mv renv renv.bak
+
             echo '--- Running R script ---'
             Rscript NAV_kasv.R
             
