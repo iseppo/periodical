@@ -166,13 +166,13 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
     ) +
     scale_fill_manual(name="Võrdlus:", values=active_colors) +
     theme_ipsum_rc() +
-    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.03/100)) + 
+    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.02/100)) + 
     theme(legend.position="top") +
     labs(
       title="Kui palju on keskmiselt kasvanud raha?",
       subtitle=plot_subtitle,
       x="Raha sissepaneku aasta", y="Kasv",
-      caption="Allikad: Pensionikeskus, Statistikaamet | arvutused: Indrek Seppo | graafik: AI"
+      caption="Allikad: Pensionikeskus, Statistikaamet | ligikaudsed arvutused: Indrek Seppo"
     ) +
     transition_time(seisuga_kp) +
     ease_aes('linear')
