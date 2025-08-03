@@ -159,7 +159,7 @@ create_specific_animation <- function(animeeritud_andmed_raw, kaadrite_kuupaevad
     ) +
     scale_fill_manual(name="Võrdlus:", values=active_colors) +
     theme_ipsum_rc() +
-    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.1/100)) + 
+    scale_y_continuous(labels=scales::percent, limits=c(NA, max(animeeritud_andmed_final$value, na.rm=TRUE)*1.02/100)) + 
     theme(legend.position="top") +
     labs(
       title="Kui palju on keskmiselt kasvanud raha?",
@@ -218,6 +218,8 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
       kaadrite_kuupaevad = kaadrite_kuupaevad,
       lopp_kp = lopp_kp,
       funds_to_include = c("Tuleva"),
+      # **** MUUDATUS ON SIIN ****
+      # Seame järjekorra nii, et Tuleva on esimene ja inflatsioon teine.
       series_order = c("Tuleva", "inflatsioon"),
       file_suffix = "_tuleva_ainult",
       plot_subtitle = "Võrdluses Tuleva ja inflatsioon"
@@ -262,8 +264,5 @@ main <- function(generate_tuleva_version_arg = FALSE) {
   message("Skripti töö on lõppenud.")
 }
 
-# Skripti käivitamiseks käsurealt: Rscript sinu_skripti_nimi.R
-# Või interaktiivselt R-i konsoolis:
-# source("sinu_skripti_nimi.R")
 main() # Tavalise versiooni jaoks
 # main(generate_tuleva_version_arg = TRUE) # Mõlema versiooni jaoks
