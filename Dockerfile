@@ -41,9 +41,13 @@ ENV PATH="/opt/quarto/bin:${PATH}"
 WORKDIR /build
 COPY renv.lock .
 
-# Paigaldame ja taastame R-i paketid renv abil.
+# Paigaldame renv paketi.
 RUN R -e "install.packages('renv')"
-RUN R -e "renv::restore()"
+
+# --- OPTIMEERITUD SAMM ---
+# Taastame R-i paketid, kasutades Posit'i binaarsete pakettide repositooriumi.
+# See on oluliselt kiirem kui allikakoodist kompileerimine.
+RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/bookworm/latest')); renv::restore()"
 
 # Registreerime hrbrthemes fondid R-is.
 RUN R -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
