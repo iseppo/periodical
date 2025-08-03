@@ -1,42 +1,50 @@
-# Alustame Rocker'i Quarto pildist, mis asub GitHubi enda registris
-# See väldib täielikult Docker Hubi kasutamist
-FROM ghcr.io/rocker-org/devcontainer/quarto:latest
+# Alustame ametlikust R-i baaspildist, mida haldab R-i kogukond ise.
+FROM r-base:4.3.3
 
-# Väldime interaktiivseid dialooge paigaldamise ajal
-ENV DEBIAN_FRONTEND=noninteractive
+# Seadistame ajavööndi ja väldime interaktiivseid dialooge
 ENV TZ=Europe/Tallinn
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Uuendame pakettide nimekirja ja paigaldame süsteemi sõltuvused ja fondid
-RUN apt-get update -qq && \
-    apt-get install -y --no-install-recommends \
+# Paigaldame Quarto eeltingimused ja muud vajalikud tööriistad
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gdebi-core \
+    pandoc \
     ssh-client \
-    libcurl4-openssl-dev libssh-dev libssl-dev \
-    libcairo2-dev libfontconfig1-dev libfreetype6-dev \
-    libpng-dev libjpeg-dev libxml2-dev libproj-dev \
-    libudunits2-dev libgdal-dev libgeos-dev \
-    ffmpeg \
-    && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
-    && apt-get install -y ttf-mscorefonts-installer \
-    && apt-get install -y fonts-liberation fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
-    && apt-get clean \
+    # Süsteemi sõltuvused R-i pakettidele
+    libcurl4-openssl-dev libssl-dev libxml2-dev libcairo2-dev \
+    libfontconfig1-dev libfreetype6-dev libpng-dev libjpeg-dev libproj-dev \
+    libudunits2-dev libgdal-dev libgeos-dev libssh-dev \
+    # Fondid
+    fonts-liberation fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
     && rm -rf /var/lib/apt/lists/*
 
+# Paigaldame Quarto käsitsi
+RUN QUARTO_VERSION="1.4.554" && \
+    curl -o quarto.deb -L "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.deb" && \
+    gdebi --non-interactive quarto.deb && \
+    rm quarto.deb
+
+# Paigaldame MS fondid eraldi, kuna see on tülikas
+RUN apt-get update && \
+    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
+    apt-get install -y --no-install-recommends ttf-mscorefonts-installer && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Paigaldame Rust/Cargo {gifski} paketi jaoks
-RUN apt-get update -qq && apt-get install -y --no-install-recommends cargo && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends cargo && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Määrame renv teegi asukoha pildi sees
-ENV R_LIBS_USER=/opt/R/renv/library
+# Määrame töökataloogi ja kopeerime vajalikud failid
+WORKDIR /build
+COPY renv.lock .
 
-# Kopeerime renv-i lukustusfaili pildile
-COPY renv.lock renv.lock
-
-# Paigaldame renv-i ja taastame kõik R-i paketid
-RUN Rscript -e "install.packages('renv')" && \
-    Rscript -e "renv::restore()"
+# Paigaldame ja taastame R-i paketid renv abil
+RUN R -e "install.packages('renv')"
+RUN R -e "renv::restore()"
 
 # Registreerime hrbrthemes fondid R-is
-RUN Rscript -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
+RUN R -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
 
-# Määrame töökataloogi, kuhu hiljem kood kopeeritakse
-WORKDIR /home/rstudio/project
+# Kopeerime ülejäänud koodi
+COPY . .
