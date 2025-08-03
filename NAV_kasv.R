@@ -496,7 +496,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     )
   
   # Animatsiooni parameetrid
-  anim_fps <- 15
+  anim_fps <- 20
   anim_pause_sec <- 10
   dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
   end_pause_frames <- anim_pause_sec * anim_fps
