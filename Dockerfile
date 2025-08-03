@@ -1,5 +1,6 @@
-# Alustame ametlikust Rocker'i ja Quarto pildist Docker Hubist
-FROM rocker/quarto:latest
+# Alustame Rocker'i Quarto pildist, mis asub GitHubi enda registris
+# See väldib täielikult Docker Hubi kasutamist
+FROM ghcr.io/rocker-org/devcontainer/quarto:latest
 
 # Väldime interaktiivseid dialooge paigaldamise ajal
 ENV DEBIAN_FRONTEND=noninteractive
@@ -8,21 +9,15 @@ ENV TZ=Europe/Tallinn
 # Uuendame pakettide nimekirja ja paigaldame süsteemi sõltuvused ja fondid
 RUN apt-get update -qq && \
     apt-get install -y --no-install-recommends \
-    # SSH kliendi paigaldamine (vajalik scp jaoks)
     ssh-client \
-    # R-i pakettide süsteemi sõltuvused
     libcurl4-openssl-dev libssh-dev libssl-dev \
     libcairo2-dev libfontconfig1-dev libfreetype6-dev \
     libpng-dev libjpeg-dev libxml2-dev libproj-dev \
     libudunits2-dev libgdal-dev libgeos-dev \
-    # FFmpeg video loomiseks
     ffmpeg \
-    # Microsofti fontide EULA aktsepteerimine
     && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
     && apt-get install -y ttf-mscorefonts-installer \
-    # Muud fondid
     && apt-get install -y fonts-liberation fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
-    # Puhastame vahemälu, et pilt oleks väiksem
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
