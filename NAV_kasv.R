@@ -534,7 +534,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     theme_ipsum_rc(base_size = 20) +
     scale_y_continuous(
       labels = scales::percent,
-      limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1.02/100)
+      limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1/100)
     ) +
     theme(legend.position = "top") +
     labs(
