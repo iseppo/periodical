@@ -9,7 +9,7 @@ language:
 format:
   html:
     toc: true
-    toc-title: Sisukord
+    toc-title: "Sisukord"
     self-contained: true
     include-in-header: analytics.html
     include-after-body: footer.html
