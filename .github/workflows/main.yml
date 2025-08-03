@@ -51,11 +51,11 @@ jobs:
           libcurl4-openssl-dev libssh-dev libssl-dev \
           libcairo2-dev libfontconfig1-dev libfreetype6-dev \
           libpng-dev libjpeg-dev libxml2-dev libproj-dev \
-          libudunits2-dev \
+          libudunits2-dev libgdal-dev libgeos-dev \
           ttf-mscorefonts-installer fonts-liberation \
           fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
           pandoc \
-          ffmpeg # --- UUS OSA: Lisatud ffmpeg video konverteerimiseks ---
+          ffmpeg 
           
     # 7. Install Quarto CLI via official action
     - name: Install Quarto CLI
