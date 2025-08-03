@@ -3,8 +3,8 @@ name: run-turuylevaade-daily
 
 on:
   schedule:
-    - cron: '5 7 * * *' # Käivitub iga päev kell 07:05 UTC
-  workflow_dispatch: {} # Võimaldab manuaalset käivitamist
+    - cron: '5 7 * * *'
+  workflow_dispatch: {}
 
 jobs:
   run-analysis:
@@ -30,11 +30,13 @@ jobs:
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
+          --volume ~/.ssh:/root/.ssh:ro \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
           ghcr.io/iseppo/periodical:main \
           bash -c "
             echo '--- Temporarily disabling renv by renaming trigger files ---'
+            # See on see meetod, mis tegelikult töötab.
             [ -f .Rprofile ] && mv .Rprofile .Rprofile.bak
             [ -d renv ] && mv renv renv.bak
 
