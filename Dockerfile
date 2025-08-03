@@ -17,8 +17,9 @@ RUN sed -i 's/main$/main contrib non-free/g' /etc/apt/sources.list && \
     cmake \
     gdal-bin \
     git \
-    # Lisatud viimane puuduv sõltuvus .xz failide lahtipakkimiseks
     xz-utils \
+    # Lisatud video konvertimiseks
+    ffmpeg \
     # Süsteemi sõltuvused R-i pakettidele
     libcurl4-openssl-dev libssl-dev libxml2-dev libcairo2-dev \
     libfontconfig1-dev libfreetype6-dev libpng-dev libjpeg-dev libproj-dev \
