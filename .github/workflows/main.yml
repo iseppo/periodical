@@ -29,7 +29,7 @@ jobs:
       run: |
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
-          --env RENV_ACTIVE=FALSE \
+          --env RENV_CONFIG_USER_PROFILE=FALSE \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
