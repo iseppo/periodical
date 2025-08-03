@@ -27,14 +27,11 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    # --- UUENDATUD SAMM ---
-    # Logime sisse Docker Hubi, kasutades GitHubi saladusi
     - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN2 }}
-        # Jätame registri tühjaks, vaikimisi on see Docker Hub (docker.io)
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Log in to the GitHub Container Registry
       uses: docker/login-action@v3
@@ -42,6 +39,16 @@ jobs:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
+
+    # --- UUS DIAGNOSTIKA SAMM ---
+    - name: 🧐 Verify Docker Hub Access
+      run: |
+        echo "--- Verifying authentication ---"
+        echo "Attempting to pull as user: ${{ secrets.DOCKERHUB_USERNAME }}"
+        echo "---"
+        docker pull rocker/quarto:latest
+        echo "---"
+        echo "✅ Successfully pulled rocker/quarto:latest"
 
     - name: Extract metadata (tags, labels) for Docker
       id: meta
