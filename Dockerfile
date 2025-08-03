@@ -1,54 +1,49 @@
-# 1. Base image with R and minimal OS
-FROM rocker/r-ver:4.4.0
+# Alustame ametlikust Rocker'i ja Quarto pildist, mis sisaldab R-i, Pandoc-i ja Quartot
+# See katab sammud 4, 6 (osaliselt) ja 7
+FROM ghcr.io/rocker-org/quarto:latest
 
-LABEL maintainer="your.name@company.com"
+# Väldime interaktiivseid dialooge paigaldamise ajal
+ENV DEBIAN_FRONTEND=noninteractive
 
-# 2. Install system dependencies (headers, Pandoc, fonts)
+# Uuendame pakettide nimekirja ja paigaldame süsteemi sõltuvused ja fondid
+# See katab sammud 5 ja 6
 RUN apt-get update -qq && \
-    # Pre-accept MS Core Fonts EULA non-interactively
-    echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
-      | debconf-set-selections && \
-    export DEBIAN_FRONTEND=noninteractive && \
     apt-get install -y --no-install-recommends \
-      libcurl4-openssl-dev libssh-dev libssl-dev \
-      libcairo2-dev libfontconfig1-dev libfreetype6-dev \
-      libpng-dev libjpeg-dev libxml2-dev libproj-dev \
-      pandoc ttf-mscorefonts-installer fonts-liberation \
-      fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans && \
-    rm -rf /var/lib/apt/lists/*
+    # SSH kliendi paigaldamine (vajalik scp jaoks)
+    ssh-client \
+    # R-i pakettide süsteemi sõltuvused
+    libcurl4-openssl-dev libssh-dev libssl-dev \
+    libcairo2-dev libfontconfig1-dev libfreetype6-dev \
+    libpng-dev libjpeg-dev libxml2-dev libproj-dev \
+    libudunits2-dev libgdal-dev libgeos-dev \
+    # FFmpeg video loomiseks
+    ffmpeg \
+    # Microsofti fontide EULA aktsepteerimine
+    && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
+    && apt-get install -y ttf-mscorefonts-installer \
+    # Muud fondid
+    && apt-get install -y fonts-liberation fonts-roboto fonts-inter fonts-ibm-plex fonts-open-sans \
+    # Puhastame vahemälu, et pilt oleks väiksem
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 3. Set up Posit Package Manager snapshots
-ENV RSPM_BIN="https://packagemanager.posit.co/cran/__linux__/jammy/latest" \
-    RSPM_SRC="https://packagemanager.posit.co/cran/2025-05-12" \
-    RENV_CONFIG_REPOS_OVERRIDE=$RSPM_BIN \
-    RENV_CONFIG_INSTALL_PRECOMPILED=true
+# Paigaldame Rust/Cargo {gifski} paketi jaoks (samm UUS OSA)
+RUN apt-get update -qq && apt-get install -y --no-install-recommends cargo && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# 4. Create cache directory for renv
-RUN mkdir -p /opt/renv-cache
+# Määrame renv teegi asukoha pildi sees
+ENV R_LIBS_USER=/opt/R/renv/library
 
-# 5. Copy only what’s needed for renv restore
-COPY renv.lock renv/activate.R ./
+# Kopeerime renv-i lukustusfaili pildile
+COPY renv.lock renv.lock
 
-# 6. Install renv and restore
+# Paigaldame renv-i ja taastame kõik R-i paketid (sammud 8 ja 9)
+# See on pildi ehitamise kõige aeganõudvam osa
+RUN Rscript -e "install.packages('renv')" && \
+    Rscript -e "renv::restore()"
 
-# Install renv and restore in one go
-# ── Install renv and restore in one RUN ─────────────────────────────────
-RUN Rscript -e '\
-  install.packages("renv", repos="https://cloud.r-project.org"); \
-  options( \
-    repos = c( \
-      RSPM = Sys.getenv("RSPM_BIN"), \
-      SNAP = Sys.getenv("RSPM_SRC") \
-    ), \
-    install.packages.compile.from.source = "never" \
-  ); \
-  renv::restore(lockfile="renv.lock", prompt=FALSE) \
-'
+# Registreerime hrbrthemes fondid R-is (samm 10)
+RUN Rscript -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
 
-# 7. Copy the rest of your project (scripts, data, etc.)
-COPY . .
-
-WORKDIR /workspace
-
-# 8. Default command to run your report
-CMD ["Rscript", "run_turuylevaade.R"]
+# Määrame töökataloogi, kuhu hiljem kood kopeeritakse
+WORKDIR /home/rstudio/project
