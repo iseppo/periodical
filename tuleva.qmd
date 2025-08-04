@@ -1,23 +1,11 @@
 ---
 title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB tootluse võrdlus"
-description: "Kümneaastane pensionifondide tootluse võrdlus. Reaalajas andmed Tuleva, LHV L ja SEB 18+ fondide kohta. Automaatuuenev analüüs."
 author: "Indrek Seppo"
 date: today
 lang: et
 language:
   title-block-author-single: "Autor"
   title-block-published: "Uuendatud"
-keywords: 
-  - pensionifondid
-  - II sammas
-  - Tuleva
-  - LHV
-  - SEB
-  - tootlus
-  - võrdlus
-  - kihlvedu
-  - investeerimine
-  - Eesti
 image: "aastane_tulu_tuleva_lhv.png"
 format:
   html:
@@ -54,24 +42,55 @@ format:
         margin: 2rem 0;
       }
       .stat-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 10px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        background: linear-gradient(135deg, #f8f9ff 0%, #e3e8ff 100%);
+        padding: 2rem 1.5rem;
+        border-radius: 15px;
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.15);
         text-align: center;
-        border-left: 4px solid #667eea;
+        border: 1px solid rgba(102, 126, 234, 0.1);
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 35px rgba(102, 126, 234, 0.25);
+      }
+      .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
       }
       .stat-number {
-        font-size: 2.5rem;
-        font-weight: bold;
-        color: #667eea;
+        font-size: 3rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
         display: block;
+        line-height: 1;
+        margin-bottom: 0.5rem;
       }
       .stat-label {
-        color: #6c757d;
-        font-size: 0.9rem;
+        color: #4a5568;
+        font-size: 0.85rem;
+        font-weight: 600;
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 1.5px;
+        margin-top: 0.5rem;
+      }
+      .stat-icon {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        font-size: 1.5rem;
+        opacity: 0.3;
+        color: #667eea;
       }
       .progress-timeline {
         position: relative;
@@ -149,7 +168,7 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 :::
 ::: {.stat-card}
 <span class="stat-number">€1000</span>
-<span class="stat-label">Panuse suurus, mis kasvab ühes SP500 indeksiga</span>
+<span class="stat-label">Panuse suurus (kasvab ühes SP500ga)</span>
 :::
 :::
 
