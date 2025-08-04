@@ -52,9 +52,7 @@ Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tän
 
 Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
 
-Originaallõim [FBs](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl), [Ekspressi lugu](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed).
-
-| Facebook lõim | Ekspress artikkel |
+| Facebooki lõim | Ekspressi artikkel |
 |:-------------:|:-----------------:|
 | [![Facebook'i originaallõim kihlveo kohta](fb_screenshot.png)](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl) | [![Ekspress.ee artikkel kihlveo kohta](ekspress_screenshot.png)](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed) |
 
