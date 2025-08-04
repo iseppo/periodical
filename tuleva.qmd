@@ -112,10 +112,10 @@ hrbrthemes::import_roboto_condensed()
 ```
 
 ::: {.hero-banner}
-# Pensionifondide Kihlvedu
+# Pensionifondide kihlvedu
 
 ::: {.lead}
-Tuleva vs LHV vs SEB - Kümneaastane võitlus parima tootluse eest
+Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 :::
 
 *Graafikud uuenevad automaagiliselt iga päev ca 10:10*
