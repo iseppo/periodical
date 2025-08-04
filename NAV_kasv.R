@@ -530,12 +530,18 @@ create_specific_animation <- function(animeeritud_andmed_raw,
       fontface = "bold"
     ) +
     scale_fill_manual(name = "Võrdlus:", values = active_colors) +
-    theme_ipsum_rc(base_size = 20) +
+    theme_ipsum_rc(base_size = 24) +
     scale_y_continuous(
       labels = scales::percent,
       limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1/100)
     ) +
-    theme(legend.position = "top") +
+    theme(
+      legend.position = "top",
+      axis.title.x = element_text(size = 22),
+      axis.title.y = element_text(size = 22),
+      axis.text.x = element_text(size = 22),
+      axis.text.y = element_text(size = 22)
+    ) +
     labs(
       title = "Kui palju on keskmiselt kasvanud raha?",
       subtitle = plot_subtitle,
