@@ -1,11 +1,24 @@
 ---
-title: "Kihlveod Tuleva vs LHV, Tuleva vs SEB"
+title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB tootluse võrdlus"
+description: "Kümneaastane pensionifondide tootluse võrdlus. Reaalajas andmed Tuleva, LHV L ja SEB 18+ fondide kohta. Automaatuuenev analüüs."
 author: "Indrek Seppo"
 date: today
 lang: et
 language:
   title-block-author-single: "Autor"
   title-block-published: "Uuendatud"
+keywords: 
+  - pensionifondid
+  - II sammas
+  - Tuleva
+  - LHV
+  - SEB
+  - tootlus
+  - võrdlus
+  - kihlvedu
+  - investeerimine
+  - Eesti
+image: "aastane_tulu_tuleva_lhv.png"
 format:
   html:
     theme: lumen           
