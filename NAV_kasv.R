@@ -556,6 +556,8 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     animation = p_anim,
     width     = 800,
     height    = 600,
+    dpi       = 300,        # sama DPI kui staatilisel
+    scale     = 1,        # sama skaleering
     renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p')),
     overwrite = TRUE, 
     nframes   = dynamic_nframes,
@@ -573,6 +575,9 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     "-c:a copy",
     shQuote(mp4_output)
   ))
+  
+  # Kustutame vahefaili
+  file.remove(mp4_input)
 } 
 
 #' Genereerib kõik animatsioonid
