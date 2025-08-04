@@ -11,9 +11,79 @@ format:
     theme: lumen           
     toc: true
     toc-title: "Sisukord"
+    toc-location: left
+    toc-depth: 3
     self-contained: true
     include-in-header: analytics.html
     include-after-body: footer.html
+    css: |
+      .hero-banner {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 3rem 2rem;
+        text-align: center;
+        margin-bottom: 2rem;
+        border-radius: 10px;
+      }
+      .hero-banner h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      }
+      .hero-banner .lead {
+        font-size: 1.3rem;
+        opacity: 0.9;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 2rem 0;
+      }
+      .stat-card {
+        background: white;
+        padding: 1.5rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        text-align: center;
+        border-left: 4px solid #667eea;
+      }
+      .stat-number {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #667eea;
+        display: block;
+      }
+      .stat-label {
+        color: #6c757d;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .progress-timeline {
+        position: relative;
+        padding: 2rem 0;
+      }
+      .timeline-item {
+        display: flex;
+        align-items: center;
+        margin-bottom: 2rem;
+      }
+      .timeline-dot {
+        width: 20px;
+        height: 20px;
+        background: #667eea;
+        border-radius: 50%;
+        margin-right: 1rem;
+        flex-shrink: 0;
+      }
+      .section-divider {
+        height: 3px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        border: none;
+        margin: 3rem 0;
+        border-radius: 3px;
+      }
 execute:
   echo: false
   warning: false
@@ -41,7 +111,36 @@ library(ggfittext)
 hrbrthemes::import_roboto_condensed()
 ```
 
-(Kui kõik töötab, uuenevad järgnevad graafikud automaagiliselt igal hommikul veidi peale kell kümmet; keda huvitab, võib vaadata ka kõigi arvutuste ja graafiktue lähtekoodi: [github](https://github.com/iseppo/periodical)).
+::: {.hero-banner}
+# Pensionifondide Kihlvedu
+
+::: {.lead}
+Tuleva vs LHV vs SEB - Kümneaastane võitlus parima tootluse eest
+:::
+
+*Graafikud uuenevad automaagiliselt iga päev ca 10:10*
+:::
+
+::: {.stats-grid}
+::: {.stat-card}
+<span class="stat-number">`r as.numeric(Sys.Date() - as.Date("2023-08-03"))`</span>
+<span class="stat-label">Päeva möödunud</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r round(10 - (as.numeric(Sys.Date() - as.Date("2023-08-03")) / 365.25), 1)`</span>
+<span class="stat-label">Aastat jäänud</span>
+:::
+::: {.stat-card}
+<span class="stat-number">3</span>
+<span class="stat-label">Võistlevat fondi</span>
+:::
+::: {.stat-card}
+<span class="stat-number">€1000</span>
+<span class="stat-label">Panuse suurus, mis kasvab ühes SP500 indeksiga</span>
+:::
+:::
+
+<hr class="section-divider">
 
 # Taustast
 
@@ -53,12 +152,62 @@ Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tän
 
 Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
 
-::: {.grid}
+<style>
+.source-card {
+  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  border: none;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+.source-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+.source-card .card-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+}
+.source-card .card-header h3 a {
+  color: white;
+  text-decoration: none;
+}
+.source-card .card-header h3 a:hover {
+  color: #f8f9fa;
+}
+.source-card .card-body {
+  padding: 0;
+}
+.source-card img {
+  width: 100%;
+  height: auto;
+  border-bottom-left-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
+  transition: transform 0.2s ease-in-out;
+}
+.source-card:hover img {
+  transform: scale(1.02);
+}
+.card-badge {
+  position: absolute;
+  top: -10px;
+  right: 15px;
+  background: #28a745;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 15px;
+  font-size: 0.8em;
+  font-weight: bold;
+  z-index: 10;
+}
+</style>
 
-::: {.g-col-6}
-::: {.card}
-::: {.card-header}
-### [Facebooki lõim](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl)
+::: {.grid .my-4}
+
+::: {.g-col-12 .g-col-md-6}
+::: {.card .source-card .position-relative}
+<div class="card-badge">📱 Facebook</div>
+::: {.card-header .text-center}
+### [Originaalkihlvedu](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl)
 :::
 ::: {.card-body}
 [![Facebook'i originaallõim kihlveo kohta](fb_screenshot.png)](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl)
@@ -66,10 +215,11 @@ Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsi
 :::
 :::
 
-::: {.g-col-6}
-::: {.card}
-::: {.card-header}
-### [Ekspressi artikkel](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed)
+::: {.g-col-12 .g-col-md-6}
+::: {.card .source-card .position-relative}
+<div class="card-badge">📰 Ekspress</div>
+::: {.card-header .text-center}
+### [Meediakajastus](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed)
 :::
 ::: {.card-body}
 [![Ekspress.ee artikkel kihlveo kohta](ekspress_screenshot.png)](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed)
@@ -80,7 +230,9 @@ Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsi
 :::
 
 
-# Kuidas on läinud seni fondidel?
+<hr class="section-divider">
+
+# Tootluse võrdlus
 
 Kihlvedu on teadlikult tehtud pika aja peale. Lühiajalist statistikat mõjutab liigselt juhus. Aga meelelahutuslikel eesmärkidel võib seda ikka jälgida.
 
@@ -270,8 +422,40 @@ Huvitav on seegi, kuidas see graafik üle aja muutunud on:
 
 # Kust näha, kuidas on läinud sinul endal?
 
-Kaks võimalust: 
+::: {.grid .my-4}
 
-1) logi sisse Pensionikeskuse lehele [pensionikeskus.ee](https://www.pensionikeskus.ee) (sealt peale sisselogimist Raportid -> Tootlus) ja vaata oma pensionifondi tootlust, 
+::: {.g-col-12 .g-col-md-6}
+::: {.card .source-card}
+::: {.card-header .text-center}
+### [Pensionikeskus](https://www.pensionikeskus.ee)
+:::
+::: {.card-body .p-3}
+**Ametlik II samba portaal**
 
-2) logi sisse [Tulevasse](https://pension.tuleva.ee/) (ei pea olema Tulevas koguja) ja näed oma pensionivara tootlust (saad muuhulgas võrrelda inflatsiooniga, Eesti pensionifondide keskmise tootlusega jne). Tulevast näed ka, kui palju maksad ise jooksvateks tasudeks.
+- Logi sisse Pensionikeskuse lehele
+- Mine: **Raportid → Tootlus**  
+- Vaata oma raha tootlust
+
+[Ava Pensionikeskus →](https://www.pensionikeskus.ee){.btn .btn-primary .btn-sm .mt-2}
+:::
+:::
+:::
+
+::: {.g-col-12 .g-col-md-6}
+::: {.card .source-card}
+::: {.card-header .text-center}
+### [Tuleva portaal](https://pension.tuleva.ee/)
+:::
+::: {.card-body .p-3}
+**Detailne analüüs**
+
+- Ei pea olema Tuleva koguja
+- Võrdlus inflatsiooniga
+- Näed täpseid jooksvaid tasusid
+
+[Ava Tuleva portaal →](https://pension.tuleva.ee/){.btn .btn-success .btn-sm .mt-2}
+:::
+:::
+:::
+
+:::
