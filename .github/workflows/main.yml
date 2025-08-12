@@ -48,7 +48,8 @@ jobs:
             quarto render tuleva.qmd
             
             echo '--- Uploading files to server ---'
-            scp ./aastane_tulu_tuleva_lhv.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
+            scp -r tuleva.html tuleva_files/ aastane_tulu_tuleva_lhv.png aastane_tulu_animeeritud.mp4 \
+              virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
             scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
             
             echo '--- Done ---'
