@@ -21,7 +21,7 @@ tryCatch({
   # Lae üles failid
   # Lisasin ka animeeritud GIF-i siia nimekirja
   scp_upload(session, 
-             files = c("./aastane_tulu_tuleva_lhv.png", "./tuleva.html", "./aastane_tulu_animeeritud.mp4", "ekspress_screeenshot.png", "fb_screenshot.png", "kihlvedu.png"), 
+             files = c("./aastane_tulu_tuleva_lhv.png", "./tuleva.html", "./aastane_tulu_animeeritud.mp4", "ekspress_screenshot.png", "fb_screenshot.png", "kihlvedu.png"), 
              to = "/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/",
              verbose = FALSE)
   
