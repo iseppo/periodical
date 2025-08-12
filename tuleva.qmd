@@ -14,7 +14,7 @@ format:
     toc-title: "Sisukord"
     toc-location: left
     toc-depth: 3
-    self-contained: true
+    self-contained: false
     include-in-header: analytics.html
     include-after-body: footer.html
     css: |
