@@ -77,8 +77,8 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today()) {
     download = "xls",
     date_from = start_date,
     date_to = end_date,
-    `f[0]` = "47",  # LHV Pensionifond L
-    `f[1]` = "38",  # LHV Pensionifond XL
+    `f[0]` = "47",  # LHV Pensionifond Ettevõtlik
+    `f[1]` = "38",  # LHV Pensionifond Julge
     `f[2]` = "77",  # Tuleva Maailma Aktsiate Pensionifond
     `f[3]` = "EPI", # II samba üldindeks
     `f[4]` = "73"   # LHV Pensionifond Indeks
@@ -212,8 +212,8 @@ compute_returns <- function(navid) {
         c(
           `II samba üldindeks`,
           `Tuleva Maailma Aktsiate Pensionifond`,
-          `LHV Pensionifond XL`,
-          `LHV Pensionifond L`,
+          `LHV Pensionifond Julge`,
+          `LHV Pensionifond Ettevõtlik`,
           `LHV Pensionifond Indeks`
         ),
         ~ mean(.x, na.rm = TRUE)
@@ -225,8 +225,8 @@ compute_returns <- function(navid) {
       EPI = 100 * (last_navs$`II samba üldindeks` / `II samba üldindeks` - 1),
       Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHVXL = 100 * (last_navs$`LHV Pensionifond XL` / `LHV Pensionifond XL` - 1),
-      LHVL = 100 * (last_navs$`LHV Pensionifond L` / `LHV Pensionifond L` - 1),
+      LHVXL = 100 * (last_navs$`LHV Pensionifond Julge` / `LHV Pensionifond Julge` - 1),
+      LHVL = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / `LHV Pensionifond Ettevõtlik` - 1),
       LHVIndeks = 100 * (last_navs$`LHV Pensionifond Indeks` / 
                            `LHV Pensionifond Indeks` - 1)
     )
@@ -286,10 +286,10 @@ arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp,
     mutate(
       Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHVXL = 100 * (last_navs$`LHV Pensionifond XL` / 
-                       `LHV Pensionifond XL` - 1),
-      LHVL = 100 * (last_navs$`LHV Pensionifond L` / 
-                      `LHV Pensionifond L` - 1)
+      LHVXL = 100 * (last_navs$`LHV Pensionifond Julge` / 
+                       `LHV Pensionifond Julge` - 1),
+      LHVL = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / 
+                      `LHV Pensionifond Ettevõtlik` - 1)
     ) %>%
     select(Kuupäev, Tuleva, LHVXL, LHVL) %>%
     pivot_longer(
@@ -697,7 +697,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
         funds_to_include = c("LHVL", "LHVXL", "Tuleva"),
         series_order = c("LHVL", "LHVXL", "Tuleva", "inflatsioon"),
         file_suffix = "",
-        plot_subtitle = "Võrdluses LHV XL, LHV L, Tuleva ja inflatsioon"
+        plot_subtitle = "Võrdluses LHV Julge, LHV Ettevõtlik, Tuleva ja inflatsioon"
       )
     })
     
@@ -733,7 +733,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
       funds_to_include = c("LHVL", "LHVXL", "Tuleva"),
       series_order = c("LHVL", "LHVXL", "Tuleva", "inflatsioon"),
       file_suffix = "",
-      plot_subtitle = "Võrdluses LHV XL, LHV L, Tuleva ja inflatsioon"
+      plot_subtitle = "Võrdluses LHV Julge, LHV Ettevõtlik, Tuleva ja inflatsioon"
     )
   }
   
