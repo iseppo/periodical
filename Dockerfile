@@ -1,5 +1,5 @@
 # Alustame Rocker Projecti pildist, mis on spetsiaalselt loodud Positi binaaridega töötamiseks.
-FROM rocker/r-ver:4.5.1
+FROM rocker/r-ver:4.5.2
 
 # Seadistame ajavööndi ja väldime interaktiivseid dialooge.
 ENV TZ=Europe/Tallinn
