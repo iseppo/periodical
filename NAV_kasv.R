@@ -271,18 +271,18 @@ compute_returns <- function(navid) {
     # Arvutame tootlused protsentides
     mutate(
       EPI = 100 * (last_navs$`II samba üldindeks` / `II samba üldindeks` - 1),
-      Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
+      Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` /
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHV Julge = 100 * (last_navs$`LHV Pensionifond Julge` / `LHV Pensionifond Julge` - 1),
-      LHV Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / `LHV Pensionifond Ettevõtlik` - 1),
-      LHVIndeks = 100 * (last_navs$`LHV Pensionifond Indeks` / 
+      `LHV Julge` = 100 * (last_navs$`LHV Pensionifond Julge` / `LHV Pensionifond Julge` - 1),
+      `LHV Ettevõtlik` = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / `LHV Pensionifond Ettevõtlik` - 1),
+      LHVIndeks = 100 * (last_navs$`LHV Pensionifond Indeks` /
                            `LHV Pensionifond Indeks` - 1)
     )
   
   # Teisendame pikka formaati
-  navid_kuu_pikk <- navid_kuu %>% 
+  navid_kuu_pikk <- navid_kuu %>%
     pivot_longer(
-      cols = c(Tuleva, LHV Ettevõtlik, LHV Julge, LHVIndeks),
+      cols = c(Tuleva, `LHV Ettevõtlik`, `LHV Julge`, LHVIndeks),
       names_to = "name",
       values_to = "value"
     )
@@ -348,12 +348,12 @@ arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp,
     mutate(
       Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` /
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHV Julge = 100 * (last_navs$`LHV Pensionifond Julge` /
+      `LHV Julge` = 100 * (last_navs$`LHV Pensionifond Julge` /
                        `LHV Pensionifond Julge` - 1),
-      LHV Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` /
+      `LHV Ettevõtlik` = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` /
                       `LHV Pensionifond Ettevõtlik` - 1)
     ) %>%
-    select(Kuupäev, Tuleva, LHV Julge, LHV Ettevõtlik) %>%
+    select(Kuupäev, Tuleva, `LHV Julge`, `LHV Ettevõtlik`) %>%
     pivot_longer(
       cols = -Kuupäev,
       names_to = "name",
