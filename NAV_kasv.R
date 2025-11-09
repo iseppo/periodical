@@ -558,7 +558,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     )
   
   # Animatsiooni parameetrid (optimeeritud kiiremaks kodeerimiseks)
-  anim_fps <- 10  # Vähendatud 20-lt 10-le (50% kiirem kodeerimine)
+  anim_fps <- 15  # Vähendatud 20-lt 10-le (50% kiirem kodeerimine)
   anim_pause_sec <- 10
   dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
   end_pause_frames <- anim_pause_sec * anim_fps
@@ -599,16 +599,16 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     ) +
     theme(
       legend.position = "top",
-      axis.title.x = element_text(size = 22),
-      axis.title.y = element_text(size = 22),
-      axis.text.x = element_text(size = 22),
-      axis.text.y = element_text(size = 22)
+      axis.title.x = element_text(size = 20),
+      axis.title.y = element_text(size = 20),
+      axis.text.x = element_text(size = 20),
+      axis.text.y = element_text(size = 20)
     ) +
     labs(
       title = "Kui palju on keskmiselt kasvanud raha?",
       subtitle = plot_subtitle,
-      x = "Raha sissepaneku aasta",
-      y = "Kasv",
+      x = "raha sissepaneku aasta",
+      y = "kasv",
       caption = "Allikad: Pensionikeskus, Statistikaamet | ligikaudsed arvutused: Indrek Seppo"
     ) +
     transition_time(seisuga_kp) +
