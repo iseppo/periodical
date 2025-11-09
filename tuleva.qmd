@@ -178,7 +178,7 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 
 Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõnadest jäi puudu ja käiku läksid käed, et sõlmida sõbralik kihlvedu.
 
-Kumb tõuseb kümne aastaga rohkem - LHV ettevõtlik (tol ajal LHV L) või Tuleva Maailma Aktsiate Indeks? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
+Kumb tõuseb kümne aastaga rohkem - LHV Ettevõtlik (tol ajal LHV L) või Tuleva Maailma Aktsiate Indeks? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
 
 Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks SEB pensionifond 18+.
 
@@ -276,7 +276,7 @@ url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispension
 navid <- read.csv2(url, fileEncoding ="UTF-16", header = TRUE, sep = "\t")
 navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
 navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
-navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV ettevõtlik"
+navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
 navid <- navid %>%
   group_by(Fond, Lühinimi) %>%
   mutate(NAV = NAV/NAV[1]) %>%
@@ -295,7 +295,7 @@ navid_end <- navid_end %>%
 navid <- navid %>%
   mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
 
-colors = c("LHV ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
+colors = c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
            "Tuleva Maailma Aktsiad" = "#00aeea")
 
 p <- navid %>%
@@ -347,7 +347,7 @@ fondide_tasud <- leht %>%
 fondide_tasud <- fondide_tasud %>%
   mutate(fond = case_when(
     fond == "Tuleva Maailma Aktsiate Pensionifond" ~ "Tuleva Maailma Aktsiad",
-    fond == "LHV Pensionifond Ettevõtlik" ~ "LHV ettevõtlik",
+    fond == "LHV Pensionifond Ettevõtlik" ~ "LHV Ettevõtlik",
     fond == "SEB pensionifond 18+" ~ "SEB 18+",
     TRUE ~ fond
   ))
@@ -358,7 +358,7 @@ fondide_tasud <- fondide_tasud |>
   mutate(jooksvad_tasud_10k = jooksvad_tasud / 100) %>%
   mutate(jooksvad_tasud_10k = jooksvad_tasud_10k * 10000)
 
-colors <- c("LHV ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
+colors <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
            "Tuleva Maailma Aktsiad" = "#00aeea")
 
 
