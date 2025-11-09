@@ -52,8 +52,8 @@ MONTH_LOOKUP <- c(
 
 #' Fondide värvid visualiseerimiseks
 FUND_COLORS <- c(
-  "LHV_Ettevõtlik" = "#4A4E5A",
-  "LHV_Julge" = "#222221",
+  "LHV ettevõtlik" = "#4A4E5A",
+  "LHV julge" = "#222221",
   "Tuleva" = "#00aeea",
   "inflatsioon" = "#FF8C00"
 )
@@ -225,8 +225,8 @@ compute_returns <- function(navid) {
       EPI = 100 * (last_navs$`II samba üldindeks` / `II samba üldindeks` - 1),
       Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHV_Julge = 100 * (last_navs$`LHV Pensionifond Julge` / `LHV Pensionifond Julge` - 1),
-      LHV_Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / `LHV Pensionifond Ettevõtlik` - 1),
+      LHV julge = 100 * (last_navs$`LHV Pensionifond Julge` / `LHV Pensionifond Julge` - 1),
+      LHV ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / `LHV Pensionifond Ettevõtlik` - 1),
       LHVIndeks = 100 * (last_navs$`LHV Pensionifond Indeks` / 
                            `LHV Pensionifond Indeks` - 1)
     )
@@ -234,7 +234,7 @@ compute_returns <- function(navid) {
   # Teisendame pikka formaati
   navid_kuu_pikk <- navid_kuu %>% 
     pivot_longer(
-      cols = c(Tuleva, LHV_Ettevõtlik, LHV_Julge, LHVIndeks),
+      cols = c(Tuleva, LHV ettevõtlik, LHV julge, LHVIndeks),
       names_to = "name",
       values_to = "value"
     )
@@ -286,12 +286,12 @@ arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp,
     mutate(
       Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHV_Julge = 100 * (last_navs$`LHV Pensionifond Julge` / 
+      LHV julge = 100 * (last_navs$`LHV Pensionifond Julge` / 
                        `LHV Pensionifond Julge` - 1),
-      LHV_Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / 
+      LHV ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / 
                       `LHV Pensionifond Ettevõtlik` - 1)
     ) %>%
-    select(Kuupäev, Tuleva, LHV_Julge, LHV_Ettevõtlik) %>%
+    select(Kuupäev, Tuleva, LHV julge, LHV ettevõtlik) %>%
     pivot_longer(
       cols = -Kuupäev,
       names_to = "name",
@@ -336,11 +336,11 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
   
   # Valmistame andmed ette
   pikk2 <- pikk %>%
-    filter(name %in% c("LHV_Ettevõtlik", "LHV_Julge", "Tuleva")) %>%
+    filter(name %in% c("LHV ettevõtlik", "LHV julge", "Tuleva")) %>%
     select(Kuupäev, name, value) %>%
     bind_rows(inflatsioon) %>%
     mutate(
-      name = fct_relevel(name, "LHV_Ettevõtlik", "LHV_Julge", "Tuleva", "inflatsioon")
+      name = fct_relevel(name, "LHV ettevõtlik", "LHV julge", "Tuleva", "inflatsioon")
     )
   
   # Inflatsiooni viimane kuupäev
@@ -694,8 +694,8 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
         animeeritud_andmed_raw = animeeritud_andmed_raw,
         kaadrite_kuupaevad = kaadrite_kuupaevad,
         lopp_kp = lopp_kp,
-        funds_to_include = c("LHV_Ettevõtlik", "LHV_Julge", "Tuleva"),
-        series_order = c("LHV_Ettevõtlik", "LHV_Julge", "Tuleva", "inflatsioon"),
+        funds_to_include = c("LHV ettevõtlik", "LHV julge", "Tuleva"),
+        series_order = c("LHV ettevõtlik", "LHV julge", "Tuleva", "inflatsioon"),
         file_suffix = "",
         plot_subtitle = "Võrdluses LHV Julge, LHV Ettevõtlik, Tuleva ja inflatsioon"
       )
@@ -730,8 +730,8 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
       animeeritud_andmed_raw = animeeritud_andmed_raw,
       kaadrite_kuupaevad = kaadrite_kuupaevad,
       lopp_kp = lopp_kp,
-      funds_to_include = c("LHV_Ettevõtlik", "LHV_Julge", "Tuleva"),
-      series_order = c("LHV_Ettevõtlik", "LHV_Julge", "Tuleva", "inflatsioon"),
+      funds_to_include = c("LHV ettevõtlik", "LHV julge", "Tuleva"),
+      series_order = c("LHV ettevõtlik", "LHV julge", "Tuleva", "inflatsioon"),
       file_suffix = "",
       plot_subtitle = "Võrdluses LHV Julge, LHV Ettevõtlik, Tuleva ja inflatsioon"
     )
