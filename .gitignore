@@ -58,3 +58,6 @@ aastane_tulu_animeeritud2.mp4
 aastane_tulu_animeeritud2_tuleva_ainult.mp4
 tuleva_files/
 inflatsioonpalk.png
+# Cache files for performance optimization
+cache_nav_data.rds
+cache_inflation_data.rds

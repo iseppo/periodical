@@ -36,8 +36,11 @@ suppressPackageStartupMessages({
   library(parallel)      # Tuumade arv
 })
 
-# Seadistame paralleliseerimise 2 tuumaga
-plan(multisession, workers = 2)
+# Seadistame paralleliseerimise kasutades kõiki saadaolevaid tuumi (jättes 1 vabaks)
+# Optimeeritud kiiremaks töötluseks
+available_cores <- parallel::detectCores()
+worker_count <- max(2, available_cores - 1)  # Vähemalt 2, maksimaalselt N-1
+plan(multisession, workers = worker_count)
 
 #-------------------------------------------------------------------------------
 # 2. ABIFUNKTSIOONID
@@ -62,14 +65,37 @@ FUND_COLORS <- c(
 # 3. ANDMETE HANKIMISE FUNKTSIOONID
 #-------------------------------------------------------------------------------
 
+#' Kontrollib cache'i kehtivust
+#' @param cache_file Cache faili asukoht
+#' @param max_age_hours Maksimaalne vanus tundides (vaikimisi 12)
+#' @return TRUE kui cache on kehtiv, FALSE muul juhul
+is_cache_valid <- function(cache_file, max_age_hours = 12) {
+  if (!file.exists(cache_file)) {
+    return(FALSE)
+  }
+
+  file_age_hours <- as.numeric(difftime(Sys.time(), file.info(cache_file)$mtime, units = "hours"))
+  return(file_age_hours < max_age_hours)
+}
+
 #' Laeb NAV (Net Asset Value) andmed Pensionikeskusest
-#' 
+#' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
+#'
 #' @param start_date Alguskuupäev (vaikimisi 2017-03-28)
 #' @param end_date Lõppkuupäev (vaikimisi tänane)
+#' @param use_cache Kas kasutada cache'i (vaikimisi TRUE)
 #' @return Data frame fondide NAV väärtustega
-get_nav_data <- function(start_date = "2017-03-28", end_date = today()) {
+get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cache = TRUE) {
+  cache_file <- "cache_nav_data.rds"
+
+  # Kontrollime cache'i
+  if (use_cache && is_cache_valid(cache_file)) {
+    message("Laen NAV andmeid cache'ist (optimeerimine)...")
+    return(readRDS(cache_file))
+  }
+
   message("Laen fondide andmeid Pensionikeskusest...")
-  
+
   # Koostame URL-i koos fondide ID-dega
   base_url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/"
   
@@ -99,27 +125,43 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today()) {
   navid <- navid_raw %>%
     select(Kuupäev, Fond, NAV) %>%
     pivot_wider(
-      names_from = Fond, 
+      names_from = Fond,
       values_from = NAV
     ) %>%
     filter(
-      !is.na(`Tuleva Maailma Aktsiate Pensionifond`), 
+      !is.na(`Tuleva Maailma Aktsiate Pensionifond`),
       !is.na(`II samba üldindeks`)
     ) %>%
     mutate(
       Kuupäev = dmy(Kuupäev)
     )
-  
+
+  # Salvestame cache'i
+  if (use_cache) {
+    saveRDS(navid, cache_file)
+    message("NAV andmed salvestatud cache'i")
+  }
+
   return(navid)
 }
 
 #' Laeb inflatsiooni andmed Statistikaametist
-#' 
+#' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
+#'
 #' @param start_year Algusaasta (vaikimisi 2017)
+#' @param use_cache Kas kasutada cache'i (vaikimisi TRUE)
 #' @return Data frame inflatsiooni andmetega
-get_inflation_data <- function(start_year = 2017) {
+get_inflation_data <- function(start_year = 2017, use_cache = TRUE) {
+  cache_file <- "cache_inflation_data.rds"
+
+  # Kontrollime cache'i
+  if (use_cache && is_cache_valid(cache_file)) {
+    message("Laen inflatsiooni andmeid cache'ist (optimeerimine)...")
+    return(readRDS(cache_file))
+  }
+
   message("Laen inflatsiooni andmeid Statistikaametist...")
-  
+
   url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
   
   # Koostame päringu
@@ -182,7 +224,13 @@ get_inflation_data <- function(start_year = 2017) {
       value = indeks
     ) %>%
     mutate(name = "inflatsioon")
-  
+
+  # Salvestame cache'i
+  if (use_cache) {
+    saveRDS(inflation, cache_file)
+    message("Inflatsiooni andmed salvestatud cache'i")
+  }
+
   return(inflation)
 }
 
@@ -246,49 +294,63 @@ compute_returns <- function(navid) {
 }
 
 #' Arvutab aastase keskmise tootluse kindla kuupäeva seisuga
-#' 
+#' OPTIMEERITUD VERSIOON: kasutab eelarvutatud kuukeskmisi
+#'
 #' @param andmete_seisuga_kp Kuupäev, mille seisuga arvutada
 #' @param nav_data NAV andmed
 #' @param inflation_data Inflatsiooni andmed
+#' @param nav_monthly_cache Eelarvutatud kuukeskmised NAV väärtused (valikuline)
 #' @return Data frame aastaste keskmiste tootlustega
-arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp, 
-                                          nav_data, 
-                                          inflation_data) {
-  
+arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp,
+                                          nav_data,
+                                          inflation_data,
+                                          nav_monthly_cache = NULL) {
+
   # Filtreerime andmed vastavalt kuupäevale
-  navid_filt <- nav_data %>% 
-    filter(Kuupäev <= andmete_seisuga_kp)
-  
-  infl_filt <- inflation_data %>% 
+  infl_filt <- inflation_data %>%
     filter(date <= andmete_seisuga_kp)
-  
+
   # Kontrollime, kas on piisavalt andmeid
-  if (nrow(navid_filt) < 2 || nrow(infl_filt) < 2) {
+  if (nrow(infl_filt) < 2) {
     return(NULL)
   }
-  
-  # Viimased väärtused
-  last_navs <- navid_filt %>% 
-    filter(Kuupäev == max(Kuupäev)) %>% 
+
+  # Viimased väärtused NAV andmetest
+  last_navs <- nav_data %>%
+    filter(Kuupäev <= andmete_seisuga_kp) %>%
+    filter(Kuupäev == max(Kuupäev)) %>%
     slice(1)
-  
-  last_infl <- infl_filt %>% 
-    filter(date == max(date)) %>% 
+
+  if (nrow(last_navs) < 1) {
+    return(NULL)
+  }
+
+  last_infl <- infl_filt %>%
+    filter(date == max(date)) %>%
     pull(indeks)
-  
-  # Arvutame fondide tootlused
-  navid_kuu <- navid_filt %>%
-    group_by(Kuupäev = floor_date(Kuupäev, "month")) %>%
-    summarize(
-      across(where(is.numeric), ~ mean(.x, na.rm = TRUE)),
-      .groups = "drop"
-    ) %>%
+
+  # Kasutame cache'i kui on saadaval, muidu arvutame
+  if (!is.null(nav_monthly_cache)) {
+    navid_kuu_base <- nav_monthly_cache %>%
+      filter(Kuupäev <= andmete_seisuga_kp)
+  } else {
+    navid_kuu_base <- nav_data %>%
+      filter(Kuupäev <= andmete_seisuga_kp) %>%
+      group_by(Kuupäev = floor_date(Kuupäev, "month")) %>%
+      summarize(
+        across(where(is.numeric), ~ mean(.x, na.rm = TRUE)),
+        .groups = "drop"
+      )
+  }
+
+  # Arvutame fondide tootlused kasutades eelarvutatud kuukeskmisi
+  navid_kuu <- navid_kuu_base %>%
     mutate(
-      Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` / 
+      Tuleva = 100 * (last_navs$`Tuleva Maailma Aktsiate Pensionifond` /
                         `Tuleva Maailma Aktsiate Pensionifond` - 1),
-      LHV Julge = 100 * (last_navs$`LHV Pensionifond Julge` / 
+      LHV Julge = 100 * (last_navs$`LHV Pensionifond Julge` /
                        `LHV Pensionifond Julge` - 1),
-      LHV Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` / 
+      LHV Ettevõtlik = 100 * (last_navs$`LHV Pensionifond Ettevõtlik` /
                       `LHV Pensionifond Ettevõtlik` - 1)
     ) %>%
     select(Kuupäev, Tuleva, LHV Julge, LHV Ettevõtlik) %>%
@@ -297,14 +359,14 @@ arvuta_aastane_tootlus_hetkes <- function(andmete_seisuga_kp,
       names_to = "name",
       values_to = "value"
     )
-  
+
   # Arvutame inflatsiooni tootluse
   infl_tootlus <- infl_filt %>%
     mutate(value = (last_infl / indeks - 1) * 100) %>%
     select(date, value) %>%
     rename(Kuupäev = date) %>%
     mutate(name = "inflatsioon")
-  
+
   # Ühendame ja arvutame aastased keskmised
   bind_rows(navid_kuu, infl_tootlus) %>%
     filter(
@@ -495,8 +557,8 @@ create_specific_animation <- function(animeeritud_andmed_raw,
       )
     )
   
-  # Animatsiooni parameetrid
-  anim_fps <- 20
+  # Animatsiooni parameetrid (optimeeritud kiiremaks kodeerimiseks)
+  anim_fps <- 10  # Vähendatud 20-lt 10-le (50% kiirem kodeerimine)
   anim_pause_sec <- 10
   dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
   end_pause_frames <- anim_pause_sec * anim_fps
@@ -562,22 +624,25 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     animation = p_anim,
     width     = 800,
     height    = 600,
-    dpi       = 300,        # sama DPI kui staatilisel
-    scale     = 1,        # sama skaleering
-    renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p')),
-    overwrite = TRUE, 
+    dpi       = 150,        # Vähendatud 300-lt 150-le (kiirem kodeerimine, piisav kvaliteet)
+    scale     = 1,
+    renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p', vcodec = 'libx264', preset = 'fast')),
+    overwrite = TRUE,
     nframes   = dynamic_nframes,
     fps       = anim_fps,
     end_pause = end_pause_frames
   )
   
   message("Lisame 10-sekundilise lõpuffiltri: ", mp4_input, " -> ", mp4_output)
-  # Lisame 10 sekundit lõppu
+  # Lisame 10 sekundit lõppu (optimeeritud kiirema kodeerimisega)
   system(paste(
     "ffmpeg",
-    "-y", 
+    "-y",
     "-i", shQuote(mp4_input),
     "-vf", "tpad=stop_mode=clone:stop_duration=10",
+    "-c:v libx264", # Video kodek
+    "-preset fast", # Kiirem kodeerimine
+    "-crf 23",      # Hea kvaliteet/kiiruse suhe
     "-c:a copy",
     shQuote(mp4_output)
   ))
@@ -666,16 +731,35 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
   )
   kaadrite_kuupaevad <- union(kuude_algused, lopp_kp)
   
-  # Arvutame animatsiooni kaadrid paralleelselt
-  message("Arvutan animatsiooni kaadreid paralleelselt...")
+  # OPTIMISEERING: Eelarvutame kuukeskmised NAV väärtused
+  # See vähendab dubleeritud arvutusi animatsiooni kaadrite genereerimisel
+  message("Eelarvutan kuukeskmisi NAV väärtusi (optimeerimine)...")
+  cache_start <- Sys.time()
+
+  nav_monthly_cache <- nav_data %>%
+    group_by(Kuupäev = floor_date(Kuupäev, "month")) %>%
+    summarize(
+      across(where(is.numeric), ~ mean(.x, na.rm = TRUE)),
+      .groups = "drop"
+    )
+
+  cache_end <- Sys.time()
+  message(paste(
+    "Cache'i loomine võttis:",
+    round(difftime(cache_end, cache_start, units = "secs"), 2),
+    "sekundit"
+  ))
+
+  # Arvutame animatsiooni kaadrid paralleelselt kasutades cache'i
+  message("Arvutan animatsiooni kaadreid paralleelselt (optimeeritud)...")
   calc_start <- Sys.time()
-  
+
   animeeritud_andmed_raw <- future_map_dfr(
     kaadrite_kuupaevad,
-    ~ arvuta_aastane_tootlus_hetkes(.x, nav_data, inflation_data_raw),
+    ~ arvuta_aastane_tootlus_hetkes(.x, nav_data, inflation_data_raw, nav_monthly_cache),
     .options = furrr_options(seed = 123)
   )
-  
+
   calc_end <- Sys.time()
   message(paste(
     "Paralleelne arvutamine võttis:",
