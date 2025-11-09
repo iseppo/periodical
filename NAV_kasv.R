@@ -558,7 +558,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     )
   
   # Animatsiooni parameetrid (optimeeritud kiiremaks kodeerimiseks)
-  anim_fps <- 15  # Vähendatud 20-lt 10-le (50% kiirem kodeerimine)
+  anim_fps <- 15  
   anim_pause_sec <- 10
   dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
   end_pause_frames <- anim_pause_sec * anim_fps
@@ -633,7 +633,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     end_pause = end_pause_frames
   )
   
-  message("Lisame 10-sekundilise lõpuffiltri: ", mp4_input, " -> ", mp4_output)
+  message("Lisame 10-sekundilise lõpufiltri: ", mp4_input, " -> ", mp4_output)
   # Lisame 10 sekundit lõppu (optimeeritud kiirema kodeerimisega)
   system(paste(
     "ffmpeg",
@@ -731,9 +731,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
   )
   kaadrite_kuupaevad <- union(kuude_algused, lopp_kp)
   
-  # OPTIMISEERING: Eelarvutame kuukeskmised NAV väärtused
-  # See vähendab dubleeritud arvutusi animatsiooni kaadrite genereerimisel
-  message("Eelarvutan kuukeskmisi NAV väärtusi (optimeerimine)...")
+  message("Eelarvutan kuukeskmisi NAV väärtusi ...")
   cache_start <- Sys.time()
 
   nav_monthly_cache <- nav_data %>%
@@ -839,7 +837,7 @@ should_update_animation <- function(filepath) {
 #' Peamine käivitamise funktsioon
 #' 
 #' @param generate_tuleva_version_arg Kas genereerida ka Tuleva versioon
-main <- function(generate_tuleva_version_arg = FALSE) {
+main <- function(generate_tuleva_version_arg = TRUE) {
   
   total_start <- Sys.time()
   
