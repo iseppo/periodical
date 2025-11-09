@@ -67,9 +67,9 @@ FUND_COLORS <- c(
 
 #' Kontrollib cache'i kehtivust
 #' @param cache_file Cache faili asukoht
-#' @param max_age_hours Maksimaalne vanus tundides (vaikimisi 12)
+#' @param max_age_hours Maksimaalne vanus tundides (vaikimisi 1)
 #' @return TRUE kui cache on kehtiv, FALSE muul juhul
-is_cache_valid <- function(cache_file, max_age_hours = 12) {
+is_cache_valid <- function(cache_file, max_age_hours = 1) {
   if (!file.exists(cache_file)) {
     return(FALSE)
   }
