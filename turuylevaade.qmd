@@ -39,6 +39,7 @@ library(jsonlite)
 library(rvest)
 library(furrr)
 library(future)
+library(parallel)
 library(tibble)
 ```
 
@@ -115,7 +116,10 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
 ```{r lae_alla_info, warning=FALSE, include=FALSE}
 # this if clause doesn't seem to work as the max data is always from previous days I guess
 #if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
-  plan(multisession)
+  # OPTIMEERITUD: kasutame kõiki saadaolevaid tuumi (jättes 1 vabaks)
+  available_cores <- parallel::detectCores()
+  worker_count <- max(2, available_cores - 1)
+  plan(multisession, workers = worker_count)
   fondid_investorid <- furrr::future_map_dfr(fondid$id, function(i) {
     message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
     url_investorid <- paste0(
