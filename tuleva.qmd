@@ -150,7 +150,7 @@ hrbrthemes::import_roboto_condensed()
 Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 :::
 
-*Graafikud uuenevad automaagiliselt iga päev ca 10:10*
+*Graafikud uuenevad automaagiliselt iga päev lõuna paiku*
 :::
 
 ::: {.stats-grid}
