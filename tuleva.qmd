@@ -1,12 +1,14 @@
 ---
-title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB tootluse võrdlus"
-author: "Indrek Seppo"
+title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB"
+pagetitle: "Tuleva vs LHV vs SEB – pensionifondide tootlus (uuendub iga päev)"
 date: today
 lang: et
+image: "aastane_tulu_tuleva_lhv.png"
+robots: "index,follow"
+author: "Indrek Seppo"
 language:
   title-block-author-single: "Autor"
   title-block-published: "Uuendatud"
-image: "aastane_tulu_tuleva_lhv.png"
 format:
   html:
     theme: lumen           
@@ -15,7 +17,7 @@ format:
     toc-location: left
     toc-depth: 3
     self-contained: false
-    include-in-header: analytics.html
+    include-in-header: [analytics.html, seo.html]
     include-after-body: footer.html
     css: |
       .hero-banner {
@@ -144,7 +146,7 @@ hrbrthemes::import_roboto_condensed()
 ```
 
 ::: {.hero-banner}
-# Pensionifondide kihlvedu
+## Pensionifondide kihlvedu
 
 ::: {.lead}
 Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
