@@ -3,7 +3,6 @@ title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB"
 pagetitle: "Tuleva vs LHV vs SEB – pensionifondide tootlus (uuendub iga päev)"
 date: today
 lang: et
-canonical-url: "https://seppo.ai/kihlveod/tuleva.html"
 image: "aastane_tulu_tuleva_lhv.png"
 robots: "index,follow"
 author: "Indrek Seppo"
