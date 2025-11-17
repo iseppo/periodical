@@ -145,6 +145,153 @@ library(ggfittext)
 hrbrthemes::import_roboto_condensed()
 ```
 
+```{r}
+date_to <- today()
+
+url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2023-08-03&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
+
+navid <- read.csv2(url, fileEncoding ="UTF-16", header = TRUE, sep = "\t")
+navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
+navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
+navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
+navid <- navid %>%
+  group_by(Fond, Lühinimi) %>%
+  mutate(NAV = NAV/NAV[1]) %>%
+  ungroup() %>%
+  mutate(Kuupäev = dmy(Kuupäev))
+
+navid_end <- navid %>%
+  filter(Kuupäev == max(Kuupäev))
+
+
+juhtimas <- navid_end |>
+  arrange(desc(NAV)) %>%
+  slice(1)
+
+max_kp <- max(navid$Kuupäev)
+
+navid_end <- navid_end %>%
+  mutate(Fond = fct_reorder(Fond, NAV)) %>%
+  mutate(Fond = fct_rev(Fond))
+
+navid <- navid %>%
+  mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
+
+colors = c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
+           "Tuleva Maailma Aktsiad" = "#00aeea")
+
+p <- navid %>%
+  ggplot(aes(x = Kuupäev, y = NAV)) +
+  geom_line(aes(color = Fond)) +
+  geom_blank(aes(x = dmy("01-02-2024"), y = 0.9)) +
+  geom_point(data = navid_end, size = 2, aes(color = Fond)) +
+  theme_ipsum_rc() +
+  scale_color_manual(values = colors) +
+  scale_x_date(date_labels = "%m/%Y") +
+  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2), color = Fond), nudge_x = 45, show.legend = FALSE) +
+  labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
+       y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
+ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
+
+```
+
+
+
+```{r}
+# URL
+url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-paevastatistika/?is_async=1"
+
+# Loeb sisse otse tabeli HTML-i
+leht <- read_html(url)
+
+fondide_tasud <- leht %>%
+  html_element("table") %>%
+  html_table() %>%
+  clean_names() %>%
+  mutate(
+    # 1. Eemaldame %-märgi ja asendame koma punktiga
+    jooksvad_tasud = as.numeric(str_replace(str_remove(tasud, "%"), ",", "."))
+  ) %>%
+  # Valime ainult vajalikud veerud
+  select(fond, jooksvad_tasud) %>%
+  # Filtreerime välja kihlveos osalevad fondid
+  filter(
+    str_detect(fond, "Tuleva Maailma Aktsiate Pensionifond|LHV Pensionifond Ettevõtlik|SEB pensionifond 18\\+")
+  )
+
+# Muudame fondi nimed lühemaks
+fondide_tasud <- fondide_tasud %>%
+  mutate(fond = case_when(
+    fond == "Tuleva Maailma Aktsiate Pensionifond" ~ "Tuleva Maailma Aktsiad",
+    fond == "LHV Pensionifond Ettevõtlik" ~ "LHV Ettevõtlik",
+    fond == "SEB pensionifond 18+" ~ "SEB 18+",
+    TRUE ~ fond
+  ))
+
+# Visualiseerime, kui palju maksad iga 10 tuhande euro kohta jooksvaid tasusid aastas
+
+fondide_tasud <- fondide_tasud |>
+  mutate(jooksvad_tasud_10k = jooksvad_tasud / 100) %>%
+  mutate(jooksvad_tasud_10k = jooksvad_tasud_10k * 10000)
+
+colors <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
+           "Tuleva Maailma Aktsiad" = "#00aeea")
+
+p_tasud <- fondide_tasud %>%
+  ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
+  geom_col(aes(fill = fond), show.legend = FALSE) +
+  scale_fill_manual(values = colors) +
+  geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
+  scale_y_continuous(labels = scales::comma_format()) +
+  labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga 10 tuhande euro kohta?",
+       x = "fond", y = "jooksvad tasud (eurot)", caption = "allikas: Pensionikeskus") +
+  coord_flip() +
+  theme_ipsum_rc()
+```
+
+
+
+```{r include=FALSE}
+# Download VUAA data
+getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03")
+sp500_tr <- Cl(`SP500TR`)
+
+# Download EUR/USD exchange rate data
+getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03")
+eur_usd <- Cl(`EURUSD=X`)
+```
+
+
+```{r}
+#eur_usd <- na.approx(eur_usd)
+# Convert S&P 500 Total Return Index to EUR
+sp500_tr_eur <- sp500_tr / eur_usd
+
+# Handle missing values
+sp500_tr_eur <- na.approx(sp500_tr_eur)
+
+
+sp500_tr_eur_df <- data.frame(Date = index(sp500_tr_eur), Value = coredata(sp500_tr_eur))
+
+sp500_tr_eur_df <- sp500_tr_eur_df %>%
+  mutate(SP500TR.Close = SP500TR.Close/SP500TR.Close[1]*1000)
+
+sp500_lastvalue <- sp500_tr_eur_df %>%
+  filter(Date == max(Date))
+
+max_date <- max(sp500_lastvalue$Date)
+p_summa <- sp500_tr_eur_df %>%
+  ggplot(aes(x = Date, y = SP500TR.Close)) +
+  geom_line() +
+  geom_point(data = sp500_lastvalue, size = 2) +
+  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
+  scale_x_date(date_labels = "%m/%Y") +
+  theme_ipsum_rc() +
+  labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+```
+
+
+
 ::: {.hero-banner}
 ## Pensionifondide kihlvedu
 
@@ -157,20 +304,20 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 
 ::: {.stats-grid}
 ::: {.stat-card}
-<span class="stat-number">`r as.numeric(Sys.Date() - as.Date("2023-08-03"))`</span>
-<span class="stat-label">Päeva möödunud</span>
+<span class="stat-number">**`r as.numeric(Sys.Date() - as.Date("2023-08-03"))`**</span>
+<span class="stat-label">päeva möödunud</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">`r round(pmax(0, 10 - (as.numeric(Sys.Date() - as.Date("2023-08-03")) / 365.25)), 1)`</span>
-<span class="stat-label">Aastat jäänud</span>
+<span class="stat-number">**`r round(pmax(0, 10 - (as.numeric(Sys.Date() - as.Date("2023-08-03")) / 365.25)), 1)`**</span>
+<span class="stat-label">aastat jäänud</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">3</span>
-<span class="stat-label">Võistlevat fondi</span>
+<span class="stat-number">**`r juhtimas$Fond`**</span>
+<span class="stat-label"> -- hetkel juhtimas</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">€1000</span>
-<span class="stat-label">Panuse suurus (kasvab ühes SP500ga)</span>
+<span class="stat-number">**€`r round(sp500_lastvalue$SP500TR.Close)`**</span>
+<span class="stat-label"> -- panuse suurus (muutub ühes SP500ga)</span>
 :::
 :::
 
@@ -180,11 +327,13 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 
 Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõnadest jäi puudu ja käiku läksid käed, et sõlmida sõbralik kihlvedu.
 
-Kumb tõuseb kümne aastaga rohkem - LHV Ettevõtlik (tol ajal LHV L) või Tuleva Maailma Aktsiate Indeks? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
+Kumb tõuseb kümne aastaga rohkem - **LHV Ettevõtlik** (tol ajal LHV L) või **Tuleva Maailma Aktsiate Indeks**? Vahur usub, et aktiivselt erinevatesse varaklassidesse raha paigutada on kallim, kuid puhastootlusega suudetakse siiski indeksit lüüa, mina - et kõrgemad tasud söövad selle tulu ära.
 
-Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks SEB pensionifond 18+.
+Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks **SEB pensionifond 18+**.
 
-Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
+Vahel on **tuhat eurot indekseerituna S&P500-ga** (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
+
+Loe, kust kõik alguse sai:
 
 <style>
 .source-card {
@@ -270,164 +419,30 @@ Vahel on tuhat eurot indekseerituna S&P500-ga (S&P 500 on USA 500 suurima börsi
 
 Kihlvedu on teadlikult tehtud pika aja peale. Lühiajalist statistikat mõjutab liigselt juhus. Aga meelelahutuslikel eesmärkidel võib seda ikka jälgida.
 
-```{r}
-date_to <- today()
 
-url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2023-08-03&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
-
-navid <- read.csv2(url, fileEncoding ="UTF-16", header = TRUE, sep = "\t")
-navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
-navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
-navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
-navid <- navid %>%
-  group_by(Fond, Lühinimi) %>%
-  mutate(NAV = NAV/NAV[1]) %>%
-  ungroup() %>%
-  mutate(Kuupäev = dmy(Kuupäev))
-
-navid_end <- navid %>%
-  filter(Kuupäev == max(Kuupäev))
-
-max_kp <- max(navid$Kuupäev)
-
-navid_end <- navid_end %>%
-  mutate(Fond = fct_reorder(Fond, NAV)) %>%
-  mutate(Fond = fct_rev(Fond))
-
-navid <- navid %>%
-  mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
-
-colors = c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
-           "Tuleva Maailma Aktsiad" = "#00aeea")
-
-p <- navid %>%
-  ggplot(aes(x = Kuupäev, y = NAV)) +
-  geom_line(aes(color = Fond)) +
-  geom_blank(aes(x = dmy("01-02-2024"), y = 0.9)) +
-  geom_point(data = navid_end, size = 2, aes(color = Fond)) +
-  theme_ipsum_rc() +
-  scale_color_manual(values = colors) +
-  scale_x_date(date_labels = "%m/%Y") +
-  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2), color = Fond), nudge_x = 45, show.legend = FALSE) +
-  labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
-       y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
-ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
-
-```
 ![](kihlvedu.png){fig-alt="Graafik pensionifondide tootlusest"}
 
 # Millised on fondide jooksvad tasud?
 
-Jooksvad tasud sisaldavad kõiki tasusid, mis fondi kogumisse minevast rahast maha arvatakse (nii fondi juhtimisega seotud tasud, kui näiteks ostu-müügitehingute hinnad jne). Oluline on siin ka see, et neid tasusid maksad igal aastal kogu senikogutu pealt, mitte üksnes lisanduva summa pealt. Ehk kui fondi kogum on 10 000 eurot, siis 1% tasu tähendab, et maksad 100 eurot aastas. Kui see kogum kasvab 20 000 euro peale, siis maksad juba 200 eurot aastas ja nii iga aasta.
+Jooksvad tasud sisaldavad kõiki tasusid, mis fondi kogumisse minevast rahast maha arvatakse (nii fondi juhtimisega seotud tasud, kui näiteks ostu-müügitehingute hinnad jne). Oluline on siin ka see, et neid tasusid **maksad igal aastal kogu senikogutu pealt**, mitte üksnes lisanduva summa pealt. Ehk kui fondi kogum on 10 000 eurot, siis 1% tasu tähendab, et maksad 100 eurot aastas. Kui see kogum kasvab 20 000 euro peale, siis maksad juba 200 eurot aastas ja nii iga aasta.
 
 ```{r}
 #| fig-width: 7
 #| fig-height: 4
 
-# URL
-url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-paevastatistika/?is_async=1"
-
-# Loeb sisse otse tabeli HTML-i
-leht <- read_html(url)
-
-fondide_tasud <- leht %>%
-  html_element("table") %>%
-  html_table() %>%
-  clean_names() %>%
-  mutate(
-    # 1. Eemaldame %-märgi ja asendame koma punktiga
-    jooksvad_tasud = as.numeric(str_replace(str_remove(tasud, "%"), ",", "."))
-  ) %>%
-  # Valime ainult vajalikud veerud
-  select(fond, jooksvad_tasud) %>%
-  # Filtreerime välja kihlveos osalevad fondid
-  filter(
-    str_detect(fond, "Tuleva Maailma Aktsiate Pensionifond|LHV Pensionifond Ettevõtlik|SEB pensionifond 18\\+")
-  )
-
-# Muudame fondi nimed lühemaks
-fondide_tasud <- fondide_tasud %>%
-  mutate(fond = case_when(
-    fond == "Tuleva Maailma Aktsiate Pensionifond" ~ "Tuleva Maailma Aktsiad",
-    fond == "LHV Pensionifond Ettevõtlik" ~ "LHV Ettevõtlik",
-    fond == "SEB pensionifond 18+" ~ "SEB 18+",
-    TRUE ~ fond
-  ))
-
-# Visualiseerime, kui palju maksad iga 10 tuhande euro kohta jooksvaid tasusid aastas
-
-fondide_tasud <- fondide_tasud |>
-  mutate(jooksvad_tasud_10k = jooksvad_tasud / 100) %>%
-  mutate(jooksvad_tasud_10k = jooksvad_tasud_10k * 10000)
-
-colors <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
-           "Tuleva Maailma Aktsiad" = "#00aeea")
-
-
-
-p <- fondide_tasud %>%
-  ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
-  geom_col(aes(fill = fond), show.legend = FALSE) +
-  scale_fill_manual(values = colors) +
-  geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
-  scale_y_continuous(labels = scales::comma_format()) +
-  labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga 10 tuhande euro kohta?",
-       x = "fond", y = "jooksvad tasud (eurot)", caption = "allikas: Pensionikeskus") +
-  coord_flip() +
-  theme_ipsum_rc()
-p
+p_tasud
 ```
 NB! Jooksvad tasud on ajas muutuvad, siin on näidatud nende viimane seis, mis avaldatud Pensionikeskuses. Tuleva ühistu liikmena saaksid veel 5€ tagasi *kickback*i oma liikmekapitali arvele.
 
 Aktiivselt juhitud fondid peavad indeksfondidega sammu pidamiseks ületama turukeskmist (ehk turuindeksit) rohkem, kui nende jooksvad tasud ületavad indeksfondi tasusid. Kogu minu argument on, et ajalooliselt ei ole nad keskmiselt seda suutnud. Kas võib olla erandeid? Võib, aga ma ei paneks oma raha selle alla. Vahur ja Endriko usuvad endasse rohkem.
 
 
-
-
 # Kuidas on läinud summal, mille peale kihla vedasime?
 
 Me vedasime kihla 1000€ peale indekseerituna S&P 500-sse. Kuis see summa aja jooksul kasvanud/kahanenud on ja kuhu tänaseks jõudnud?
 
-```{r include=FALSE}
-# Download VUAA data
-getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03")
-sp500_tr <- Cl(`SP500TR`)
-
-# Download EUR/USD exchange rate data
-getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03")
-eur_usd <- Cl(`EURUSD=X`)
-```
-
-
 ```{r}
-
-#eur_usd <- na.approx(eur_usd)
-# Convert S&P 500 Total Return Index to EUR
-sp500_tr_eur <- sp500_tr / eur_usd
-
-# Handle missing values
-sp500_tr_eur <- na.approx(sp500_tr_eur)
-
-
-sp500_tr_eur_df <- data.frame(Date = index(sp500_tr_eur), Value = coredata(sp500_tr_eur))
-
-sp500_tr_eur_df <- sp500_tr_eur_df %>%
-  mutate(SP500TR.Close = SP500TR.Close/SP500TR.Close[1]*1000)
-
-sp500_lastvalue <- sp500_tr_eur_df %>%
-  filter(Date == max(Date))
-
-max_date <- max(sp500_lastvalue$Date)
-p <- sp500_tr_eur_df %>%
-  ggplot(aes(x = Date, y = SP500TR.Close)) +
-  geom_line() +
-  geom_point(data = sp500_lastvalue, size = 2) +
-  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
-  scale_x_date(date_labels = "%m/%Y") +
-  theme_ipsum_rc() +
-  labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
-
-p
+p_summa
 ```
 
 
@@ -441,7 +456,7 @@ Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin 
 
 ![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
 
-Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et see käivitada, näed, kuidas see graafik oleks välja näinud erinevatel kuudel minevikus.
+Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et näha, kuidas see graafik ajas muutunud on.
 
 <video width="100%" preload="metadata" muted playsinline controls poster="aastane_tulu_tuleva_lhv.png">
   <source src="aastane_tulu_animeeritud.mp4" type="video/mp4">
