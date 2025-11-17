@@ -441,7 +441,7 @@ Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin 
 
 ![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
 
-Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et see käivitada, näed, kuidas see graafik oleks välja näinud erinevatel kuudel.
+Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et see käivitada, näed, kuidas see graafik oleks välja näinud erinevatel kuudel minevikus.
 
 <video width="100%" preload="metadata" muted playsinline controls poster="aastane_tulu_tuleva_lhv.png">
   <source src="aastane_tulu_animeeritud.mp4" type="video/mp4">
