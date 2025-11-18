@@ -299,7 +299,7 @@ p_summa <- sp500_tr_eur_df %>%
 Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 :::
 
-*Graafikud uuenevad automaagiliselt iga päev lõuna paiku*
+*Andmed/graafikud uuenevad automaagiliselt iga päev lõuna paiku*
 :::
 
 ::: {.stats-grid}
