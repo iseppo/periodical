@@ -474,30 +474,39 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
 #' Genereerib kõik staatilised graafikud
 generate_static_charts <- function() {
   message("--- Alustan staatiliste graafikute genereerimist ---")
-  
+
+  # Määrame 10-aastase limiidi
+  kihlveo_algus <- ymd("2023-08-03")
+  kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+
+  # Piirame andmete lõppkuupäeva 10 aastaga
+  lopp_kp <- min(today(), kihlveo_lopp)
+
+  message(paste("Staatilised graafikud kuni kuupäevani:", lopp_kp, "(10-aastane limiit)"))
+
   # Laeme andmed paralleelselt
   message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
   load_start <- Sys.time()
-  
-  # Käivitame mõlemad laadimised paralleelselt
-  nav_future <- future({ get_nav_data() })
+
+  # Käivitame mõlemad laadimised paralleelselt, kasutades piiratud lõppkuupäeva
+  nav_future <- future({ get_nav_data(end_date = lopp_kp) })
   inflation_future <- future({ get_inflation_data() })
-  
+
   # Ootame mõlemad tulemused
   navid <- value(nav_future)
   inflation <- value(inflation_future)
-  
+
   load_end <- Sys.time()
   message(paste(
     "Paralleelne laadimine võttis:",
     round(difftime(load_end, load_start, units = "secs"), 2),
     "sekundit"
   ))
-  
+
   # Arvutame tootlused ja joonistame
   returns <- compute_returns(navid)
   plot_static_chart(returns$pikk, inflation, returns$date)
-  
+
   message("--- Staatilised graafikud valmis ---")
 }
 
@@ -652,21 +661,21 @@ create_specific_animation <- function(animeeritud_andmed_raw,
 } 
 
 #' Genereerib kõik animatsioonid
-#' 
+#'
 #' @param create_tuleva_only_version Kas luua ka ainult Tuleva versioon
 generate_all_animations <- function(create_tuleva_only_version = FALSE) {
   message("--- Alustan animeeritud graafikute genereerimist ---")
-  
+
   # Laeme andmed paralleelselt
   message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
   load_start <- Sys.time()
-  
+
   nav_future <- future({ get_nav_data() })
-  inflation_future <- future({ 
+  inflation_future <- future({
     # Inflatsiooni andmete laadimine animatsiooni jaoks
     # (vajame toorandmeid, mitte töödeldud)
     message("Animatsioon: Laen inflatsiooni andmeid...")
-    
+
     url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
     query_body <- list(
       query = list(
@@ -687,15 +696,15 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
       ),
       response = list(format = "csv2")
     )
-    
+
     response <- POST(
       url,
       body = toJSON(query_body, auto_unbox = TRUE),
       add_headers("Content-Type" = "application/json")
     )
-    
+
     csv_data <- content(response, "text", encoding = "UTF-8")
-    
+
     df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
       rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
       mutate(
@@ -708,22 +717,30 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
         date > dmy("01-03-2017"),
         !is.na(indeks)
       )
-    
+
     return(df)
   })
-  
+
   nav_data <- value(nav_future)
   inflation_data_raw <- value(inflation_future)
-  
+
   load_end <- Sys.time()
   message(paste(
     "Paralleelne laadimine võttis:",
     round(difftime(load_end, load_start, units = "secs"), 2),
     "sekundit"
   ))
-  
+
   # Määrame animatsiooni parameetrid
-  lopp_kp <- max(nav_data$Kuupäev)
+  # Kihlvedu algab 2023-08-03 ja kestab 10 aastat
+  kihlveo_algus <- ymd("2023-08-03")
+  kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+
+  # Piirame animatsiooni 10 aastaga
+  lopp_kp <- min(max(nav_data$Kuupäev), kihlveo_lopp)
+
+  message(paste("Animatsioon peatub kuupäeval:", lopp_kp, "(10-aastane limiit)"))
+
   kuude_algused <- seq.Date(
     from = ymd("2018-01-01"),
     to = lopp_kp,
