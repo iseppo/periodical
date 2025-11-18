@@ -474,30 +474,39 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
 #' Genereerib kõik staatilised graafikud
 generate_static_charts <- function() {
   message("--- Alustan staatiliste graafikute genereerimist ---")
-  
+
+  # Määrame 10-aastase limiidi
+  kihlveo_algus <- ymd("2023-08-03")
+  kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+
+  # Piirame andmete lõppkuupäeva 10 aastaga
+  lopp_kp <- min(today(), kihlveo_lopp)
+
+  message(paste("Staatilised graafikud kuni kuupäevani:", lopp_kp, "(10-aastane limiit)"))
+
   # Laeme andmed paralleelselt
   message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
   load_start <- Sys.time()
-  
-  # Käivitame mõlemad laadimised paralleelselt
-  nav_future <- future({ get_nav_data() })
+
+  # Käivitame mõlemad laadimised paralleelselt, kasutades piiratud lõppkuupäeva
+  nav_future <- future({ get_nav_data(end_date = lopp_kp) })
   inflation_future <- future({ get_inflation_data() })
-  
+
   # Ootame mõlemad tulemused
   navid <- value(nav_future)
   inflation <- value(inflation_future)
-  
+
   load_end <- Sys.time()
   message(paste(
     "Paralleelne laadimine võttis:",
     round(difftime(load_end, load_start, units = "secs"), 2),
     "sekundit"
   ))
-  
+
   # Arvutame tootlused ja joonistame
   returns <- compute_returns(navid)
   plot_static_chart(returns$pikk, inflation, returns$date)
-  
+
   message("--- Staatilised graafikud valmis ---")
 }
 
