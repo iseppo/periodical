@@ -192,7 +192,12 @@ hrbrthemes::import_roboto_condensed()
 ```
 
 ```{r}
-date_to <- today()
+# Määrame 10-aastase limiidi
+kihlveo_algus <- ymd("2023-08-03")
+kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+
+# Piirame andmete lõppkuupäeva 10 aastaga
+date_to <- min(today(), kihlveo_lopp)
 
 url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2023-08-03&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
@@ -299,12 +304,19 @@ p_tasud <- fondide_tasud %>%
 
 
 ```{r include=FALSE}
-# Download VUAA data
-getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03")
+# Määrame 10-aastase limiidi
+kihlveo_algus <- ymd("2023-08-03")
+kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+
+# Piirame andmete lõppkuupäeva 10 aastaga
+lopp_kp <- min(today(), kihlveo_lopp)
+
+# Download VUAA data (piiratud 10 aastaga)
+getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03", to = lopp_kp)
 sp500_tr <- Cl(`SP500TR`)
 
-# Download EUR/USD exchange rate data
-getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03")
+# Download EUR/USD exchange rate data (piiratud 10 aastaga)
+getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03", to = lopp_kp)
 eur_usd <- Cl(`EURUSD=X`)
 ```
 
