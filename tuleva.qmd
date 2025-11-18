@@ -272,10 +272,11 @@ sp500_tr_eur <- sp500_tr / eur_usd
 sp500_tr_eur <- na.approx(sp500_tr_eur)
 
 
-sp500_tr_eur_df <- data.frame(Date = index(sp500_tr_eur), Value = coredata(sp500_tr_eur))
-
-sp500_tr_eur_df <- sp500_tr_eur_df %>%
-  mutate(SP500TR.Close = SP500TR.Close/SP500TR.Close[1]*1000)
+sp500_tr_eur_df <- data.frame(
+  Date = index(sp500_tr_eur),
+  SP500TR.Close = coredata(sp500_tr_eur)
+) %>%
+  mutate(SP500TR.Close = SP500TR.Close / SP500TR.Close[1] * 1000)
 
 sp500_lastvalue <- sp500_tr_eur_df %>%
   filter(Date == max(Date))
