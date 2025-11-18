@@ -188,7 +188,7 @@ p <- navid %>%
   theme_ipsum_rc() +
   scale_color_manual(values = colors) +
   scale_x_date(date_labels = "%m/%Y") +
-  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2), color = Fond), nudge_x = 45, show.legend = FALSE) +
+  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
   labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
        y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
@@ -242,7 +242,7 @@ p_tasud <- fondide_tasud %>%
   geom_col(aes(fill = fond), show.legend = FALSE) +
   scale_fill_manual(values = colors) +
   geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
-  scale_y_continuous(labels = scales::comma_format()) +
+  scale_y_continuous(labels = scales::comma_format(decimal.mark = ",")) +
   labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga 10 tuhande euro kohta?",
        x = "fond", y = "jooksvad tasud (eurot)", caption = "allikas: Pensionikeskus") +
   coord_flip() +
