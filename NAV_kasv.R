@@ -594,7 +594,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     scale_fill_manual(name = "Võrdlus:", values = active_colors) +
     theme_ipsum_rc(base_size = 24) +
     scale_y_continuous(
-      labels = scales::percent,
+      labels = scales::percent_format(decimal.mark = ","),
       limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1/100)
     ) +
     theme(

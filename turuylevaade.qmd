@@ -311,7 +311,7 @@ ggplotly(p)
 options(scipen=999)
 
 indeksfondid_koos <- indeksfondid_koos %>%
-    mutate(investoreid_label = format(investoreid, big.mark = " "))
+    mutate(investoreid_label = format(investoreid, big.mark = " ", decimal.mark = ","))
 
   
 p <- indeksfondid_koos %>%
@@ -339,7 +339,7 @@ fondid_graaf <- fondid_koos %>%
   mutate(name = fct_recode(name, "Koguturu maht" = "maht_turg", "Indeksfondide maht" = "maht")) %>%
   mutate(name = fct_rev(name)) %>%
   mutate(value = round(value/1000000, 1)) %>%
-  mutate(value_label = format(value, big.mark = " "))
+  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
 
 p <- fondid_graaf %>%
   ggplot(aes(x = Kuupäev, y = value)) +
@@ -366,7 +366,7 @@ fondid_graaf2 <- fondid_koos %>%
   mutate(name = fct_recode(name, "aktiivselt juhitud fondid" = "maht_juhitud", "indeksifondid" = "maht")) %>%
   mutate(name = fct_rev(name)) %>%
   mutate(value = round(value/1000000, 0)) %>%
-  mutate(value_label = format(value, big.mark = " "))
+  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
 
 p <- fondid_graaf2 %>%
   ggplot(aes(x = Kuupäev, y = value)) +
@@ -403,7 +403,7 @@ fondid_graaf <- fondid_koos %>%
   mutate(akt_juh_fond = investoreid_turg - investoreid) %>%
   pivot_longer(cols = c(investoreid, akt_juh_fond)) %>%
   mutate(name = fct_recode(name, "Aktiivselt juhitud fondi kogujad" = "akt_juh_fond", "Indeksifondi kogujaid" = "investoreid")) %>%
-  mutate(value_label = format(value, big.mark = " "))
+  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
 
 p <- fondid_graaf %>%
   ggplot(aes(x = Kuupäev, y = value)) +
@@ -620,7 +620,7 @@ make_change_plot <- function(data, months_back, var){
       muutus < 0 ~ "",
       TRUE ~ ""
     )) %>%
-    mutate(formatted = format(muutus, big.mark = " "),
+    mutate(formatted = format(muutus, big.mark = " ", decimal.mark = ","),
            formatted = str_trim(formatted),
            label = paste0(ette, formatted, "\n", muutus_pc, "%"))
 
@@ -806,11 +806,11 @@ indeksisse_lisandunud_sum <- sum(indeks_vahetus$amount_from_fund, indeks_vahetus
 
 # Vahetuste statistika (`r period_end`)
 
-Kokku vahetas fondi **`r format(vahetus_kokku, big.mark = " ")` inimest**, summas **`r format(round(vahetus_kokku_sum/1000000), big.mark = " ")` miljonit eurot** (keskmine summa **`r round(vahetus_kokku_sum/vahetus_kokku)`€**).
+Kokku vahetas fondi **`r format(vahetus_kokku, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(vahetus_kokku_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r round(vahetus_kokku_sum/vahetus_kokku)`€**).
 
-Indeksfondidest lahkus **`r format(indeksist_lahkunud, big.mark = " ")` inimest**, summas **`r format(round(indeksist_lahkunud_sum/1000000), big.mark = " ")` miljonit eurot** (keskmine summa **`r format(round(indeksist_lahkunud_sum/indeksist_lahkunud), big.mark = " ")`€**). 
+Indeksfondidest lahkus **`r format(indeksist_lahkunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksist_lahkunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r format(round(indeksist_lahkunud_sum/indeksist_lahkunud), big.mark = " ", decimal.mark = ",")`€**). 
 
-Indeksfondidesse lisandus **`r format(indeksisse_lisandunud, big.mark = " ")` inimest**, summas **`r format(round(indeksisse_lisandunud_sum/1000000), big.mark = " ")` miljonit eurot** (keskmine summa **`r format(round(indeksisse_lisandunud_sum/indeksisse_lisandunud), big.mark = " ")`€**).
+Indeksfondidesse lisandus **`r format(indeksisse_lisandunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksisse_lisandunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r format(round(indeksisse_lisandunud_sum/indeksisse_lisandunud), big.mark = " ", decimal.mark = ",")`€**).
 
 *NB! Osad indeksfondidest lahkujad või lisandujad võisid minna teise indeksfondi või tulla sealt.*
 
