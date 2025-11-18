@@ -118,6 +118,52 @@ format:
         margin: 3rem 0;
         border-radius: 3px;
       }
+      .source-card {
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        border: none;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      }
+      .source-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+      }
+      .source-card .card-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-bottom: none;
+      }
+      .source-card .card-header h3 a {
+        color: white;
+        text-decoration: none;
+      }
+      .source-card .card-header h3 a:hover {
+        color: #f8f9fa;
+      }
+      .source-card .card-body {
+        padding: 0;
+      }
+      .source-card img {
+        width: 100%;
+        height: auto;
+        border-bottom-left-radius: 0.375rem;
+        border-bottom-right-radius: 0.375rem;
+        transition: transform 0.2s ease-in-out;
+      }
+      .source-card:hover img {
+        transform: scale(1.02);
+      }
+      .card-badge {
+        position: absolute;
+        top: -10px;
+        right: 15px;
+        background: #28a745;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 15px;
+        font-size: 0.8em;
+        font-weight: bold;
+        z-index: 10;
+      }
 execute:
   echo: false
   warning: false
@@ -336,55 +382,6 @@ Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tän
 Vahel on **tuhat eurot indekseerituna S&P500-ga** (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
 
 Loe, kust kõik alguse sai:
-
-<style>
-.source-card {
-  transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-  border: none;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-.source-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-}
-.source-card .card-header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-bottom: none;
-}
-.source-card .card-header h3 a {
-  color: white;
-  text-decoration: none;
-}
-.source-card .card-header h3 a:hover {
-  color: #f8f9fa;
-}
-.source-card .card-body {
-  padding: 0;
-}
-.source-card img {
-  width: 100%;
-  height: auto;
-  border-bottom-left-radius: 0.375rem;
-  border-bottom-right-radius: 0.375rem;
-  transition: transform 0.2s ease-in-out;
-}
-.source-card:hover img {
-  transform: scale(1.02);
-}
-.card-badge {
-  position: absolute;
-  top: -10px;
-  right: 15px;
-  background: #28a745;
-  color: white;
-  padding: 4px 12px;
-  border-radius: 15px;
-  font-size: 0.8em;
-  font-weight: bold;
-  z-index: 10;
-}
-</style>
 
 ::: {.grid .my-4}
 

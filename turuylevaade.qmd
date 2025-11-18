@@ -12,7 +12,6 @@ format:
     number-sections: false
     number-depth: 3
     html-math-method: katex
-    css: styles.css
     self-contained: true
     anchor-sections: true
     smooth-scroll: true
