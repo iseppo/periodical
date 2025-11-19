@@ -135,8 +135,21 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 
 
 ```{r lae_alla_info, message=FALSE, warning=FALSE}
-from_day <- "2017-05-02"
+# Määrame, millisest kuupäevast alates andmeid laadida
+csv_ajalugu <- "iii_sammas_ajalugu.csv"
 yesterday <- as.character(today() - days(1))
+
+if(file.exists(csv_ajalugu)) {
+  # Kui CSV eksisteerib, laeme ainult viimased 7 päeva
+  vanad_andmed <- read_csv(csv_ajalugu, show_col_types = FALSE)
+  viimane_kuupaev <- max(vanad_andmed$Kuupäev, na.rm = TRUE)
+  from_day <- as.character(viimane_kuupaev - days(1))
+  message("Laadime andmeid alates ", from_day, " (CSV fail eksisteerib)")
+} else {
+  # Kui CSV ei eksisteeri, laeme kogu ajaloo
+  from_day <- "2017-05-02"
+  message("Laadime kogu ajaloo alates ", from_day)
+}
 
 # 1. TÄIUSTATUD FUNKTSIOONID
 # Eemaldab ka "hard space" (\u00a0) ja tavalised tühikud
@@ -289,6 +302,36 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
   }
 
   message("Laaditud fondide arv: ", length(unique(fondid_info$Fond)))
+
+  # SALVESTAME ANDMED CSV-SSE
+  if(file.exists(csv_ajalugu)) {
+    # Loe olemasolevad andmed
+    vanad_andmed <- read_csv(csv_ajalugu, show_col_types = FALSE)
+
+    # Leia uued read (kuupäevad + fondid, mida ei ole veel CSV-s)
+    uued_read <- fondid_info %>%
+      anti_join(vanad_andmed, by = c("Kuupäev", "Lühinimi"))
+
+    if(nrow(uued_read) > 0) {
+      # Lisa uued read ja salvesta
+      kokku <- bind_rows(vanad_andmed, uued_read) %>%
+        arrange(Kuupäev)
+      write_csv(kokku, csv_ajalugu)
+      message("✓ Lisatud ", nrow(uued_read), " uut rida ajaloo faili (",
+              length(unique(uued_read$Kuupäev)), " uut kuupäeva)")
+
+      # Kasutame täielikku andmestikku graafikute jaoks
+      fondid_info <- kokku
+    } else {
+      message("ℹ Uusi andmeid ei ole, CSV juba ajakohane")
+      # Kasutame täielikku andmestikku graafikute jaoks
+      fondid_info <- vanad_andmed
+    }
+  } else {
+    # Kui CSV ei eksisteeri, salvesta kõik andmed
+    write_csv(fondid_info, csv_ajalugu)
+    message("✓ Loodud uus ajaloo fail: ", csv_ajalugu, " (", nrow(fondid_info), " rida)")
+  }
 
 } else {
   fondid_info <- data.frame()
