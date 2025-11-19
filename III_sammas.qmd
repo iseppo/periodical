@@ -208,6 +208,20 @@ if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
   } else if("Invest..arv" %in% names(fondid_kontod)) {
     fondid_kontod <- fondid_kontod %>%
       rename("kontode arv" = Invest..arv, kontode_arv_muutus = Muutus..)
+  } else {
+    # Kui kumbagi veergu ei leitud, kontrolli kas 'kontode arv' on juba olemas
+    if(!"kontode arv" %in% names(fondid_kontod)) {
+      message("Hoiatus: Ei leidnud 'Osak..arv' ega 'Invest..arv' veergu. Olemasolevad veerud: ",
+              paste(names(fondid_kontod), collapse=", "))
+      # Loome tühja 'kontode arv' veeru vältimaks vigu
+      fondid_kontod <- fondid_kontod %>%
+        mutate(`kontode arv` = NA_integer_)
+    }
+    # Kontrollime kontode_arv_muutus veeru olemasolu
+    if("Muutus.." %in% names(fondid_kontod) && !"kontode_arv_muutus" %in% names(fondid_kontod)) {
+      fondid_kontod <- fondid_kontod %>%
+        rename(kontode_arv_muutus = Muutus..)
+    }
   }
 }
 
