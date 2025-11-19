@@ -50,27 +50,38 @@ yesterday <- as.character(today() - days(1))
 
 ```{r fondid_online}
 
-url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-pensionifondid/"
-fondid_html <- read_html(url)
+# Korrektne URL kolmanda samba fondide jaoks
+url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-fondid/fonditasude-vordlus/"
 
-# Select all <a> elements with class "fund"
-fund_links <- fondid_html %>% html_nodes("a.fund")
+fund_info <- tryCatch({
+  fondid_html <- read_html(url)
 
-# Extract the 'href' attribute to get fund URLs
-fund_urls <- html_attr(fund_links, "href")
+  # Leia kõik lingid, mis viitavad fondidele
+  fund_links <- fondid_html %>% html_nodes("a[href*='/fid/']")
 
-# Extract the fund IDs from the URLs
-fund_ids <- sapply(fund_urls, function(url) {
-    matches <- regexpr("/fid/(\\d+)/", url)
-    ifelse(matches > 0, regmatches(url, matches), NA)
+  # Ekstrakti 'href' atribuut
+  fund_urls <- html_attr(fund_links, "href")
+
+  # Ekstrakti fondi ID-d URL-idest
+  fund_ids <- sapply(fund_urls, function(url) {
+      matches <- regexpr("/fid/(\\d+)/", url)
+      ifelse(matches > 0, regmatches(url, matches), NA)
+  })
+  fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)
+
+  # Ekstrakti fondi nimetused
+  fund_titles <- html_text(fund_links, trim = TRUE)
+
+  # Loo andmestik ja eemalda duplikaadid
+  data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE) %>%
+    filter(!is.na(ID)) %>%
+    distinct(ID, .keep_all = TRUE)
+
+}, error = function(e) {
+  # Kui veebist laadimine ebaõnnestub, tagasta tühi andmestik
+  message("Ei õnnestunud laadida fondide nimekirja veebist: ", e$message)
+  data.frame(ID = character(), Title = character(), stringsAsFactors = FALSE)
 })
-fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)
-
-# Extract the 'title' attribute for fund titles
-fund_titles <- html_attr(fund_links, "title")
-
-# Combine the IDs and titles into a data frame
-fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE)
 
 ```
 
@@ -79,11 +90,16 @@ fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = F
 fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
 
 # Kui fail on tühi või pole veel täidetud, kasutame veebist leitud andmeid
-if(nrow(fondid) == 0) {
+if(nrow(fondid) == 0 && nrow(fund_info) > 0) {
   fondid <- fund_info %>%
     rename(id = ID, fond = Title) %>%
-    mutate(indeks = "")
-} else {
+    mutate(indeks = ifelse(
+      grepl("indeks|Indeks|index|Index", fond, ignore.case = TRUE),
+      "x",
+      ""
+    ))
+} else if(nrow(fondid) > 0 && nrow(fund_info) > 0) {
+  # Kui meil on CSV fail ja veebist andmed, uuendame fondide nimetusi
   fondid$fond <- NULL
   fondid <- fondid %>%
     mutate(id = as.character(id)) %>%
@@ -91,10 +107,14 @@ if(nrow(fondid) == 0) {
     rename(fond = Title)
 }
 
-puuduvad <- fund_info %>%
-  filter(!ID %in% fondid$id)
+# Kontrolli uusi fonde
+puuduvad <- data.frame()
 puudu <- FALSE
-if(nrow(puuduvad) > 0) puudu <- TRUE
+if(nrow(fund_info) > 0) {
+  puuduvad <- fund_info %>%
+    filter(!ID %in% fondid$id)
+  if(nrow(puuduvad) > 0) puudu <- TRUE
+}
 ```
 
 
@@ -201,12 +221,33 @@ if(!is.null(fondid_kontod) && !is.null(fondid_maht) &&
   fondid_info <- full_join(fondid_maht, fondid_kontod) %>%
     select(-contains("Fond.PIK"))
 
-  # Lisame lühinimed (kui need on defineeritud)
-  # III samba fondide lühinimed võivad olla erinevad, praegu kasutame fondi nime
-  if(!"Lühinimi" %in% names(fondid_info)) {
-    fondid_info <- fondid_info %>%
-      mutate(Lühinimi = Fond)
-  }
+  # Lisame lühinimed
+  fondid_info <- fondid_info %>%
+    mutate(Lühinimi = case_when(
+      # LHV fondid
+      grepl("LHV.*Indeks III", Fond) ~ "LHV III Indeks",
+      grepl("LHV.*Aktiivne III", Fond) ~ "LHV III Akt",
+      # Luminor fondid
+      grepl("Luminor.*50-55.*Indeks", Fond) ~ "Lum III 50-55",
+      grepl("Luminor.*16-50", Fond) ~ "Lum III 16-50",
+      grepl("Luminor.*55\\+", Fond) ~ "Lum III 55+",
+      # SEB fondid
+      grepl("SEB kliimatuleviku.*indeks", Fond) ~ "SEB III Kliima",
+      grepl("SEB III.*18\\+", Fond) ~ "SEB III 18+",
+      grepl("SEB III.*65\\+", Fond) ~ "SEB III 65+",
+      # Swedbank fondid
+      grepl("Swedbank III.*Indeks", Fond) ~ "SW III Indeks",
+      grepl("Swedbank.*V100.*indeks.*piiratud", Fond) ~ "SW III V100i*",
+      grepl("Swedbank.*V100", Fond) ~ "SW III V100",
+      grepl("Swedbank.*V30.*indeks.*piiratud", Fond) ~ "SW III V30i*",
+      grepl("Swedbank.*V30", Fond) ~ "SW III V30",
+      grepl("Swedbank.*V60.*indeks.*piiratud", Fond) ~ "SW III V60i*",
+      grepl("Swedbank.*V60", Fond) ~ "SW III V60",
+      # Tuleva fond
+      grepl("Tuleva III", Fond) ~ "Tuleva III",
+      # Vaikimisi kasuta fondi nime
+      TRUE ~ Fond
+    ))
 } else {
   # Kui andmeid ei õnnestunud laadida, loome tühja andmestiku
   fondid_info <- data.frame(
