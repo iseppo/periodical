@@ -71,46 +71,35 @@ leia_veerg <- function(df, muster) {
 
 
 ```{r fondid_online}
+# Määrame fondid ja nende ID-d käsitsi, et vältida veebilehe vigadest tulenevaid probleeme.
+# ID-d pärinevad Pensionikeskuse süsteemist.
 
-# Korrektne URL kolmanda samba fondide jaoks
-url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-fondid/fonditasude-vordlus/"
+fondid <- data.frame(
+  id = c("78", "47", "48", "82",    # LHV
+         "77", "50", "51",          # Swedbank
+         "79", "44",                # SEB
+         "76", "75",                # Luminor
+         "80"),                     # Tuleva
+  fond = c("LHV III Indeks", "LHV III Täiendav", "LHV III XL", "LHV III Roheline",
+           "Swedbank III V100 Indeks", "Swedbank III V30", "Swedbank III V60",
+           "SEB III Tulevik Indeks", "SEB III Aktiivne",
+           "Luminor III Jätkusuutlik", "Luminor III Aktsiad 100",
+           "Tuleva III"),
+  indeks = c("x", "", "", "",       # Märgime indeksfondid (x)
+             "x", "", "",
+             "x", "",
+             "x", "",
+             "x"),
+  stringsAsFactors = FALSE
+)
 
-fund_info <- tryCatch({
-  fondid_html <- read_html(url)
-
-  # Leia kõik lingid, mis viitavad fondidele
-  fund_links <- fondid_html %>% html_nodes("a[href*='/fid/']")
-
-  # Ekstrakti 'href' atribuut
-  fund_urls <- html_attr(fund_links, "href")
-
-  # Ekstrakti fondi ID-d URL-idest
-  fund_ids <- sapply(fund_urls, function(url) {
-      matches <- regexpr("/fid/(\\d+)/", url)
-      ifelse(matches > 0, regmatches(url, matches), NA)
-  })
-  fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)
-
-  # Ekstrakti fondi nimetused
-  fund_titles <- html_text(fund_links, trim = TRUE)
-
-  # Loo andmestik ja eemalda duplikaadid
-  data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE) %>%
-    filter(!is.na(ID)) %>%
-    distinct(ID, .keep_all = TRUE)
-
-}, error = function(e) {
-  # Kui veebist laadimine ebaõnnestub, tagasta tühi andmestik
-  message("Ei õnnestunud laadida fondide nimekirja veebist: ", e$message)
-  data.frame(ID = character(), Title = character(), stringsAsFactors = FALSE)
-})
-
+# Jätame meelde ka fund_info, et ülejäänud kood katki ei läheks
+fund_info <- fondid %>% rename(ID = id, Title = fond)
 ```
 
-
 ```{r message=FALSE, warning=FALSE, include=FALSE}
-fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
-
+# fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
+fondid <- data.frame()
 # Kui fail on tühi või pole veel täidetud, kasutame veebist leitud andmeid
 if(nrow(fondid) == 0 && nrow(fund_info) > 0) {
   fondid <- fund_info %>%
@@ -145,76 +134,104 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 ```
 
 
-```{r lae_alla_info, warning=FALSE, include=FALSE}
-# Laadime kolmanda samba andmed
-# III sambas on pensionikontode arv ja fondide maht
+```{r lae_alla_info, message=FALSE, warning=FALSE}
+from_day <- "2017-05-02"
+yesterday <- as.character(today() - days(1))
 
+# 1. TÄIUSTATUD FUNKTSIOONID
+# Eemaldab ka "hard space" (\u00a0) ja tavalised tühikud
+puhasta_number <- function(x) {
+  if(is.numeric(x)) return(x)
+  if(is.character(x)) {
+    # Asendame kõik tühiku-laadsed märgid (sh non-breaking space) tühjusega
+    x_puhastatud <- gsub("\\s|\\u00a0", "", x) 
+    x_puhastatud <- gsub(",", ".", x_puhastatud, fixed = TRUE)
+    return(as.numeric(x_puhastatud))
+  }
+  return(as.numeric(x))
+}
+
+# Otsib veergu täpsema mustri järgi
+leia_veerg_taern <- function(df, muster) {
+  # Otsime veergu, mis sisaldab mustrit
+  veerg <- grep(muster, names(df), ignore.case = TRUE, value = TRUE)
+  # Välistame "Osakute arv", kui otsime kontosid
+  if(grepl("konto", muster, ignore.case=TRUE)) {
+     veerg <- veerg[!grepl("osak", veerg, ignore.case=TRUE)]
+  }
+  if(length(veerg) > 0) return(veerg[1])
+  return(NULL)
+}
+
+# 2. ANDMETE LAADIMINE
 available_cores <- parallel::detectCores()
-worker_count <- max(2, available_cores - 1)
+worker_count <- max(1, available_cores - 1)
 plan(multisession, workers = worker_count)
 
-fondid_kontod <- furrr::future_map_dfr(fondid$id, function(i) {
-  message("tõmban kontode andmeid fondist ", fondid$fond[fondid$id == i])
-  url_kontod <- paste0(
-    "https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls&date_from=",
-    from_day,
-    "&date_to=",
-    yesterday,
-    "&f%5B0%5D=",
-    i
-  )
+lae_fondi_andmed <- function(id, fondi_nimi, tyyp) {
+  # Tyyp on kas "kontod" või "maht"
+  url_base <- if(tyyp == "kontod") {
+    "https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls"
+  } else {
+    "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls"
+  }
+  
+  full_url <- paste0(url_base, "&date_from=", from_day, "&date_to=", yesterday, "&f%5B0%5D=", id)
+  
   tryCatch({
-    read.csv2(
-      url_kontod,
-      fileEncoding = "UTF-16",
-      header = TRUE,
-      sep = "\t",
-      colClasses = c(
-        "character",
-        "character",
-        "character",
-        "character",
-        "integer",
-        "character"
-      )
-    )
+    # Loeme faili sisse. Pensionikeskus kasutab tab-separated UTF-16
+    df <- read.csv2(full_url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE, 
+                    check.names = FALSE, stringsAsFactors = FALSE)
+    
+    # Leiame kuupäeva veeru (tavaliselt esimene)
+    if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
+    
+    # Leiame õige andmeveeru
+    if(tyyp == "kontod") {
+      col <- leia_veerg_taern(df, "pensionikontode.*arv") # OTSIME KONKREETSELT KONTOSID
+      if(!is.null(col)) {
+        df$vaartus <- puhasta_number(df[[col]])
+        return(df %>% select(Kuupäev, vaartus) %>% mutate(id = id, tyyp = "kontod"))
+      }
+    } else {
+      col <- leia_veerg_taern(df, "maht")
+      if(!is.null(col)) {
+        df$vaartus <- puhasta_number(df[[col]])
+        return(df %>% select(Kuupäev, vaartus) %>% mutate(id = id, tyyp = "maht"))
+      }
+    }
+    return(NULL)
   }, error = function(e) {
-    message("Viga fondi ", i, " andmete laadimisel: ", e$message)
+    message("Viga fondi ", id, " (", tyyp, ") laadimisel: ", e$message)
     return(NULL)
   })
-})
+}
 
-fondid_maht <- furrr::future_map_dfr(fondid$id, function(i) {
-  message("tõmban mahu andmeid fondist ", fondid$fond[fondid$id == i])
-  url_maht <- paste0(
-    "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls&date_from=",
-    from_day,
-    "&date_to=",
-    yesterday,
-    "&f%5B0%5D=",
-    i
-  )
-  tryCatch({
-    read.csv2(
-      url_maht,
-      fileEncoding = "UTF-16",
-      header = TRUE,
-      sep = "\t",
-      colClasses = c(
-        "character",
-        "character",
-        "character",
-        "character",
-        "integer",
-        "character"
-      )
-    )
-  }, error = function(e) {
-    message("Viga fondi ", i, " andmete laadimisel: ", e$message)
-    return(NULL)
-  })
-})
+# Laeme andmed paralleelselt
+raw_kontod <- furrr::future_map_dfr(fondid$id, ~lae_fondi_andmed(.x, "", "kontod"))
+raw_maht <- furrr::future_map_dfr(fondid$id, ~lae_fondi_andmed(.x, "", "maht"))
+
 plan(sequential)
+
+# 3. ANDMETE ÜHENDAMINE
+# Teeme andmed laiaks (wide format) ja ühendame
+if(nrow(raw_kontod) > 0 && nrow(raw_maht) > 0) {
+  
+  clean_kontod <- raw_kontod %>% 
+    rename(`kontode arv` = vaartus) %>% 
+    select(-tyyp)
+    
+  clean_maht <- raw_maht %>% 
+    rename(maht = vaartus) %>% 
+    select(-tyyp)
+  
+  fondid_info <- full_join(clean_maht, clean_kontod, by = c("Kuupäev", "id")) %>%
+    left_join(fondid, by = "id") %>%
+    rename(Fond = fond, Lühinimi = fond) # Ühilduvus vana koodiga
+    
+} else {
+  fondid_info <- data.frame()
+}
 ```
 
 
@@ -608,11 +625,6 @@ if(nrow(fondid_info) > 0) {
 }
 ```
 
-# Teave
-
-See analüüs põhineb Pensionikeskuse avalikult kättesaadavatel andmetel kolmanda samba (vabatahtlike pensionifondide) kohta.
-
-Kolmas sammas on vabatahtlik pensionisüsteem, kus inimesed saavad koguda pensioniks täiendavalt. Erinevalt teisest sambast (kohustuslik pensionisammas) on kolmandas sambas osalemine vabatahtlik.
 
 **Andmeallikad:**
 
