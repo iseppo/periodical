@@ -24,7 +24,7 @@ execute:
 
 
 
-```{r message=FALSE}
+```{r setup, message=FALSE}
 library(dplyr)
 library(tidyr)
 library(forcats)
@@ -42,7 +42,7 @@ library(parallel)
 library(tibble)
 ```
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
+```{r config, echo=FALSE, message=FALSE, warning=FALSE}
 from_day <- "2017-05-02"
 yesterday <- as.character(today() - days(1))
 
@@ -97,9 +97,9 @@ fondid <- data.frame(
 fund_info <- fondid %>% rename(ID = id, Title = fond)
 ```
 
-```{r message=FALSE, warning=FALSE, include=FALSE}
+```{r fondid_csv, message=FALSE, warning=FALSE, include=FALSE}
 # fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
-fondid <- data.frame()
+# fondid <- data.frame()  # See rida tühjendaks fondid muutuja
 # Kui fail on tühi või pole veel täidetud, kasutame veebist leitud andmeid
 if(nrow(fondid) == 0 && nrow(fund_info) > 0) {
   fondid <- fund_info %>%
@@ -129,7 +129,7 @@ if(nrow(fund_info) > 0) {
 ```
 
 
-```{r eval = puudu}
+```{r check_new_funds, eval = puudu}
 cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 ```
 
@@ -235,110 +235,9 @@ if(nrow(raw_kontod) > 0 && nrow(raw_maht) > 0) {
 ```
 
 
-```{r message=FALSE, warning=FALSE, include=FALSE}
-if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
-  if(is.character(fondid_kontod$Kuupäev)) fondid_kontod$Kuupäev <- dmy(fondid_kontod$Kuupäev)
-
-  # Leiame dünaamiliselt veeru, mis sisaldab "arv"
-  arv_veerg <- leia_veerg(fondid_kontod, "arv")
-  muutus_veerg <- leia_veerg(fondid_kontod, "muutus")
-
-  if(!is.null(arv_veerg)) {
-    # Puhastame ja teisendame numbrid
-    fondid_kontod[[arv_veerg]] <- puhasta_number(fondid_kontod[[arv_veerg]])
-
-    # Nimetame veeru ümber
-    fondid_kontod <- fondid_kontod %>%
-      rename("kontode arv" = !!arv_veerg)
-  } else {
-    message("Hoiatus: Ei leidnud veergu, mis sisaldab 'arv'. Olemasolevad veerud: ",
-            paste(names(fondid_kontod), collapse=", "))
-    fondid_kontod <- fondid_kontod %>%
-      mutate(`kontode arv` = NA_real_)
-  }
-
-  if(!is.null(muutus_veerg) && !"kontode_arv_muutus" %in% names(fondid_kontod)) {
-    fondid_kontod <- fondid_kontod %>%
-      rename(kontode_arv_muutus = !!muutus_veerg)
-  }
-}
-
-if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
-  if(is.character(fondid_maht$Kuupäev)) fondid_maht$Kuupäev <- dmy(fondid_maht$Kuupäev)
-
-  # Leiame dünaamiliselt veeru, mis sisaldab "maht"
-  maht_veerg <- leia_veerg(fondid_maht, "maht")
-  muutus_veerg <- leia_veerg(fondid_maht, "muutus")
-
-  if(!is.null(maht_veerg)) {
-    # Puhastame ja teisendame numbrid
-    fondid_maht[[maht_veerg]] <- puhasta_number(fondid_maht[[maht_veerg]])
-
-    # Nimetame veeru ümber
-    fondid_maht <- fondid_maht %>%
-      rename("maht" = !!maht_veerg)
-  } else {
-    message("Hoiatus: Ei leidnud veergu, mis sisaldab 'maht'. Olemasolevad veerud: ",
-            paste(names(fondid_maht), collapse=", "))
-    fondid_maht <- fondid_maht %>%
-      mutate(maht = NA_real_)
-  }
-
-  if(!is.null(muutus_veerg) && !"mahu_muutus" %in% names(fondid_maht)) {
-    fondid_maht <- fondid_maht %>%
-      rename(mahu_muutus = !!muutus_veerg)
-  }
-}
-
-# Ühendame andmed
-if(!is.null(fondid_kontod) && !is.null(fondid_maht) &&
-   nrow(fondid_kontod) > 0 && nrow(fondid_maht) > 0) {
-  fondid_info <- full_join(fondid_maht, fondid_kontod) %>%
-    select(-contains("Fond.PIK"))
-
-  # Lisame lühinimed
-  fondid_info <- fondid_info %>%
-    mutate(Lühinimi = case_when(
-      # LHV fondid
-      grepl("LHV.*Indeks III", Fond) ~ "LHV III Indeks",
-      grepl("LHV.*Aktiivne III", Fond) ~ "LHV III Akt",
-      # Luminor fondid
-      grepl("Luminor.*50-55.*Indeks", Fond) ~ "Lum III 50-55",
-      grepl("Luminor.*16-50", Fond) ~ "Lum III 16-50",
-      grepl("Luminor.*55\\+", Fond) ~ "Lum III 55+",
-      # SEB fondid
-      grepl("SEB kliimatuleviku.*indeks", Fond) ~ "SEB III Kliima",
-      grepl("SEB III.*18\\+", Fond) ~ "SEB III 18+",
-      grepl("SEB III.*65\\+", Fond) ~ "SEB III 65+",
-      # Swedbank fondid
-      grepl("Swedbank III.*Indeks", Fond) ~ "SW III Indeks",
-      grepl("Swedbank.*V100.*indeks.*piiratud", Fond) ~ "SW III V100i*",
-      grepl("Swedbank.*V100", Fond) ~ "SW III V100",
-      grepl("Swedbank.*V30.*indeks.*piiratud", Fond) ~ "SW III V30i*",
-      grepl("Swedbank.*V30", Fond) ~ "SW III V30",
-      grepl("Swedbank.*V60.*indeks.*piiratud", Fond) ~ "SW III V60i*",
-      grepl("Swedbank.*V60", Fond) ~ "SW III V60",
-      # Tuleva fond
-      grepl("Tuleva III", Fond) ~ "Tuleva III",
-      # Vaikimisi kasuta fondi nime
-      TRUE ~ Fond
-    ))
-} else {
-  # Kui andmeid ei õnnestunud laadida, loome tühja andmestiku
-  fondid_info <- data.frame(
-    Kuupäev = as.Date(character()),
-    Fond = character(),
-    Lühinimi = character(),
-    maht = numeric(),
-    `kontode arv` = integer(),
-    stringsAsFactors = FALSE
-  )
-  names(fondid_info)[5] <- "kontode arv"
-}
-```
 
 
-```{r message=FALSE, warning=FALSE, include=FALSE}
+```{r filter_index_funds, message=FALSE, warning=FALSE, include=FALSE}
 # Filtreerime indeksfondid, kui need on märgitud
 if(nrow(fondid_info) > 0) {
   indeksfondid <- fondid_info %>%
@@ -349,7 +248,7 @@ if(nrow(fondid_info) > 0) {
 ```
 
 
-```{r include=FALSE}
+```{r set_colors, include=FALSE}
 # Määrame värvid
 if(nrow(indeksfondid) > 0) {
   indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
@@ -360,7 +259,7 @@ if(nrow(indeksfondid) > 0) {
 ```
 
 
-```{r include=FALSE}
+```{r date_range, include=FALSE}
 if(nrow(fondid_info) > 0) {
   andmed_alates <- min(fondid_info$Kuupäev, na.rm = TRUE)
   andmed_kuni <- max(fondid_info$Kuupäev, na.rm = TRUE)
@@ -372,7 +271,7 @@ if(nrow(fondid_info) > 0) {
 
 # Kolmanda samba ülevaade
 
-```{r}
+```{r print_date_range}
 if(nrow(fondid_info) > 0) {
   cat("Andmed:", as.character(andmed_alates), "--", as.character(andmed_kuni), "\n")
 } else {
@@ -383,7 +282,7 @@ if(nrow(fondid_info) > 0) {
 ::: panel-tabset
 
 
-```{r include=FALSE}
+```{r calc_totals, include=FALSE}
 if(nrow(fondid_info) > 0) {
   # Arvutame kogusummad
   k6ik_koos <- fondid_info %>%
@@ -422,7 +321,7 @@ if(nrow(fondid_info) > 0) {
 
 #### Koguturu maht
 
-```{r}
+```{r plot_total_volume}
 if(nrow(k6ik_koos) > 0) {
   options(scipen = 999)
 
@@ -452,7 +351,7 @@ if(nrow(k6ik_koos) > 0) {
 
 #### Koguturu kontod
 
-```{r}
+```{r plot_total_accounts}
 if(nrow(k6ik_koos) > 0) {
   options(scipen = 999)
 
@@ -483,7 +382,7 @@ if(nrow(k6ik_koos) > 0) {
 
 # Fondide võrdlus
 
-```{r include=FALSE}
+```{r calc_market_share, include=FALSE}
 if(nrow(fondid_info) > 0) {
   # Arvutame iga fondi turuosa
   fondid_turuosa <- fondid_info %>%
@@ -518,7 +417,7 @@ if(nrow(fondid_info) > 0) {
 
 #### Turuosa kontode järgi
 
-```{r}
+```{r plot_market_share_accounts}
 if(nrow(fondid_top) > 0) {
   maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
   viimanep2ev <- fondid_top %>%
@@ -541,7 +440,7 @@ if(nrow(fondid_top) > 0) {
 
 #### Turuosa mahu järgi
 
-```{r}
+```{r plot_market_share_volume}
 if(nrow(fondid_top) > 0) {
   maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
   viimanep2ev <- fondid_top %>%
@@ -564,7 +463,7 @@ if(nrow(fondid_top) > 0) {
 
 #### Kontode arv
 
-```{r}
+```{r plot_accounts_count}
 if(nrow(fondid_top) > 0) {
   maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
   viimanep2ev <- fondid_top %>%
@@ -587,7 +486,7 @@ if(nrow(fondid_top) > 0) {
 
 #### Maht
 
-```{r}
+```{r plot_volume}
 if(nrow(fondid_top) > 0) {
   maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
   viimanep2ev <- fondid_top %>%
@@ -614,7 +513,7 @@ if(nrow(fondid_top) > 0) {
 :::
 
 
-```{r include=FALSE}
+```{r save_csv, include=FALSE}
 # Salvestame andmed CSV-sse
 if(nrow(fondid_info) > 0) {
   write_csv(k6ik_koos, file = "iii_sammas_koguturg.csv")
