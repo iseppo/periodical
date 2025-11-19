@@ -287,21 +287,13 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
       )
     )
 
-  # Lisame osakuomanike arvu (fondi-põhine investorite/kontohoidjate arv)
-  if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
-    fondid_info <- fondid_info %>%
-      left_join(raw_osakuomanikud, by = "Fond") %>%
-      rename(`kontode arv` = osakuomanikud)
-
-    message("✓ Lisatud fondi-põhine osakuomanike arv (",
-            nrow(raw_osakuomanikud), " fondi)")
-  } else {
-    fondid_info <- fondid_info %>%
-      mutate(`kontode arv` = NA_integer_)
-    message("! Osakuomanike andmed puuduvad")
-  }
+  # MÄRKUS: Osakuomanike arv (kontode arv) on saadaval AINULT viimase päeva kohta
+  # Ajalugu ei ole võimalik alla laadida
+  # Seetõttu EI lisata seda siia fondid_info tabelisse (mis sisaldab ajalugu)
+  # Osakuomanike andmeid kasutatakse ainult viimase päeva graafikutes
 
   message("Laaditud fondide arv: ", length(unique(fondid_info$Fond)))
+  message("ℹ Kontode arvu ajalugu ei ole saadaval - kasutatakse ainult viimase päeva andmeid")
 
   # SALVESTAME ANDMED CSV-SSE
   if(file.exists(csv_ajalugu)) {
@@ -390,39 +382,37 @@ if(nrow(fondid_info) > 0) {
 
 ```{r calc_totals, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame kogusummad MAHU ja KONTODE kohta
+  # Arvutame kogusumma MAHU kohta (ainult maht, sest kontode arvu ei ole ajalooliselt)
   k6ik_koos <- fondid_info %>%
     group_by(Kuupäev) %>%
     summarize(
-      maht_kokku = sum(maht, na.rm = TRUE),
-      kontode_kokku = sum(`kontode arv`, na.rm = TRUE)
+      maht_kokku = sum(maht, na.rm = TRUE)
     )
 
-  # Lisame ka koguturu kontode arvu aegridade jaoks (kui olemas)
+  # Lisame koguturu kontode arvu (see on ajaloo kohta!)
   if(!is.null(raw_koguturu_kontod) && nrow(raw_koguturu_kontod) > 0) {
     k6ik_koos <- k6ik_koos %>%
-      left_join(raw_koguturu_kontod, by = "Kuupäev", suffix = c("", "_api"))
+      left_join(raw_koguturu_kontod, by = "Kuupäev")
+  } else {
+    k6ik_koos <- k6ik_koos %>%
+      mutate(kontode_arv_koguturg = NA_integer_)
   }
 
   if(nrow(indeksfondid) > 0) {
     indeksfondid_koos <- indeksfondid %>%
       group_by(Kuupäev) %>%
       summarize(
-        maht = sum(maht, na.rm = TRUE),
-        kontode_arv = sum(`kontode arv`, na.rm = TRUE)
+        maht = sum(maht, na.rm = TRUE)
       ) %>%
       left_join(k6ik_koos, by = "Kuupäev") %>%
       mutate(
-        indeks_maht_protsent = round(100 * maht / maht_kokku, 1),
-        indeks_kontode_protsent = round(100 * kontode_arv / kontode_kokku, 1)
+        indeks_maht_protsent = round(100 * maht / maht_kokku, 1)
       )
   } else {
     indeksfondid_koos <- k6ik_koos %>%
       mutate(
         maht = 0,
-        kontode_arv = 0,
-        indeks_maht_protsent = 0,
-        indeks_kontode_protsent = 0
+        indeks_maht_protsent = 0
       )
   }
 } else {
@@ -464,18 +454,19 @@ if(nrow(k6ik_koos) > 0) {
 #### Koguturu kontod
 
 ```{r plot_total_accounts}
-if(nrow(k6ik_koos) > 0) {
+if(nrow(k6ik_koos) > 0 && !is.null(k6ik_koos$kontode_arv_koguturg)) {
   options(scipen = 999)
 
   koguturu_kontod <- k6ik_koos %>%
-    mutate(kontode_label = format(kontode_kokku, big.mark = " ", decimal.mark = ","))
+    filter(!is.na(kontode_arv_koguturg)) %>%
+    mutate(kontode_label = format(kontode_arv_koguturg, big.mark = " ", decimal.mark = ","))
 
   p <- koguturu_kontod %>%
-    ggplot(aes(x = Kuupäev, y = kontode_kokku)) +
+    ggplot(aes(x = Kuupäev, y = kontode_arv_koguturg)) +
     geom_line() +
     theme_ft_rc() +
     geom_blank(aes(x = min(Kuupäev), y = 0)) +
-    labs(title = "Kolmanda samba pensionikontode arv",
+    labs(title = "Kolmanda samba pensionikontode arv (koguturg)",
          x = "kuupäev",
          y = "pensionikontode arv") +
     geom_point(data = filter(koguturu_kontod, Kuupäev == max(Kuupäev)),
@@ -496,12 +487,11 @@ if(nrow(k6ik_koos) > 0) {
 
 ```{r calc_market_share, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame iga fondi turuosa MAHU ja KONTODE järgi
+  # Arvutame iga fondi turuosa MAHU järgi (kontode arvu ajalugu ei ole saadaval)
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1),
-      turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1)
+      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1)
     )
 
   # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
@@ -540,6 +530,28 @@ if(nrow(fondid_info) > 0) {
 } else {
   fondid_top <- data.frame()
 }
+
+# Arvutame turuosa kontode järgi AINULT viimase päeva kohta (osakuomanikud)
+if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
+  kontode_turuosa_viimane <- raw_osakuomanikud %>%
+    mutate(
+      turuosa_kontod = round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1)
+    ) %>%
+    arrange(desc(osakuomanikud))
+
+  # Värvid kontode graafikutele
+  kontode_arv_viimane <- nrow(kontode_turuosa_viimane)
+  kontode_base_colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                           "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
+  colors_kontod <- rep(kontode_base_colors, ceiling(kontode_arv_viimane / length(kontode_base_colors)))[1:kontode_arv_viimane]
+  names(colors_kontod) <- kontode_turuosa_viimane$Fond
+
+  message("✓ Arvutatud turuosa kontode järgi viimase päeva kohta (",
+          kontode_arv_viimane, " fondi)")
+} else {
+  kontode_turuosa_viimane <- data.frame()
+  message("! Kontode turuosa andmed puuduvad")
+}
 ```
 
 ::: panel-tabset
@@ -547,23 +559,23 @@ if(nrow(fondid_info) > 0) {
 #### Turuosa kontode järgi
 
 ```{r plot_market_share_accounts}
-if(nrow(fondid_top) > 0) {
-  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
-  viimanep2ev <- fondid_top %>%
-    filter(Kuupäev == maksp2ev) %>%
-    arrange(desc(`kontode arv`))
+if(nrow(kontode_turuosa_viimane) > 0) {
+  # MÄRKUS: Kontode arvu ajalugu ei ole saadaval
+  # Seetõttu näitame AINULT viimase päeva turuosa (barplot)
 
-  p <- fondid_top %>%
-    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-    ggplot(aes(x = Kuupäev, y = turuosa_kontod)) +
-    geom_line(aes(color = Lühinimi)) +
+  p <- kontode_turuosa_viimane %>%
+    mutate(Fond = factor(Fond, levels = Fond)) %>%
+    ggplot(aes(x = Fond, y = turuosa_kontod, fill = Fond)) +
+    geom_col() +
     theme_ft_rc() +
-    scale_color_manual(values = colors_top) +
-    labs(x = "kuupäev", y = "turuosa (%)",
-         title = "Fondide turuosa kontode arvu järgi")
+    scale_fill_manual(values = colors_kontod) +
+    labs(x = "", y = "turuosa (%)",
+         title = "Fondide turuosa kontode arvu järgi (viimane päev)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
   ggplotly(p)
 } else {
-  cat("Andmed puuduvad")
+  cat("Kontode arvu andmed puuduvad (ei saa ajalugu alla laadida)")
 }
 ```
 
@@ -593,23 +605,23 @@ if(nrow(fondid_top) > 0) {
 #### Kontode arv
 
 ```{r plot_accounts_count}
-if(nrow(fondid_top) > 0) {
-  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
-  viimanep2ev <- fondid_top %>%
-    filter(Kuupäev == maksp2ev) %>%
-    arrange(desc(`kontode arv`))
+if(nrow(kontode_turuosa_viimane) > 0) {
+  # MÄRKUS: Kontode arvu ajalugu ei ole saadaval
+  # Seetõttu näitame AINULT viimase päeva andmed (barplot)
 
-  p <- fondid_top %>%
-    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-    ggplot(aes(x = Kuupäev, y = `kontode arv`)) +
-    geom_line(aes(color = Lühinimi)) +
+  p <- kontode_turuosa_viimane %>%
+    mutate(Fond = factor(Fond, levels = Fond)) %>%
+    ggplot(aes(x = Fond, y = osakuomanikud, fill = Fond)) +
+    geom_col() +
     theme_ft_rc() +
-    scale_color_manual(values = colors_top) +
-    labs(x = "kuupäev", y = "osakuomanike arv",
-         title = "Fondide osakuomanike arv")
+    scale_fill_manual(values = colors_kontod) +
+    labs(x = "", y = "osakuomanike arv",
+         title = "Fondide osakuomanike arv (viimane päev)") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
   ggplotly(p)
 } else {
-  cat("Andmed puuduvad")
+  cat("Kontode arvu andmed puuduvad (ei saa ajalugu alla laadida)")
 }
 ```
 
@@ -642,44 +654,22 @@ if(nrow(fondid_top) > 0) {
 #### Kontode arv (barplot)
 
 ```{r plot_accounts_barplot}
-if(nrow(fondid_turuosa) > 0) {
-  # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
-  fondide_arv_kuupaeval <- fondid_turuosa %>%
-    group_by(Kuupäev) %>%
-    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
-
-  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
-
-  maksp2ev <- fondide_arv_kuupaeval %>%
-    filter(fondide_arv == max_fondide_arv) %>%
-    pull(Kuupäev) %>%
-    max(na.rm = TRUE)
-
-  # Võtame KÕIK fondid KONTODE ARVU järgi (ainult need, millel on andmed)
-  top_kontod <- fondid_turuosa %>%
-    filter(Kuupäev == maksp2ev, !is.na(`kontode arv`)) %>%
-    arrange(desc(`kontode arv`))
-
-  # Värvid
-  top_arv_k <- nrow(top_kontod)
-  base_colors_k <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                     "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
-  colors_kontod <- rep(base_colors_k, ceiling(top_arv_k / length(base_colors_k)))[1:top_arv_k]
-  names(colors_kontod) <- top_kontod$Lühinimi
-
-  p <- top_kontod %>%
-    mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
-    ggplot(aes(x = Lühinimi, y = `kontode arv`, fill = Lühinimi)) +
+# MÄRKUS: See on duplikaat "Kontode arv" graafikuga
+# Jätame selle sisse juhuks, kui kasutaja eelistab seda formaati
+if(nrow(kontode_turuosa_viimane) > 0) {
+  p <- kontode_turuosa_viimane %>%
+    mutate(Fond = factor(Fond, levels = Fond)) %>%
+    ggplot(aes(x = Fond, y = osakuomanikud, fill = Fond)) +
     geom_col() +
     theme_ft_rc() +
     scale_fill_manual(values = colors_kontod) +
     labs(x = "", y = "osakuomanike arv",
-         title = paste0("Fondide kontode arv (", maksp2ev, ")")) +
+         title = "Fondide osakuomanike arv (viimane päev)") +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
           legend.position = "none")
   ggplotly(p)
 } else {
-  cat("Andmed puuduvad")
+  cat("Kontode arvu andmed puuduvad (ei saa ajalugu alla laadida)")
 }
 ```
 
