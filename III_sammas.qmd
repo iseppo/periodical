@@ -576,20 +576,29 @@ if(nrow(fondid_top) > 0) {
 #### Kontode arv (barplot)
 
 ```{r plot_accounts_barplot}
-if(nrow(fondid_top) > 0) {
-  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
-  viimanep2ev <- fondid_top %>%
-    filter(Kuupäev == maksp2ev) %>%
-    arrange(desc(`kontode arv`))
+if(nrow(fondid_turuosa) > 0) {
+  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
 
-  p <- viimanep2ev %>%
+  # Võtame TOP 10 fondi KONTODE ARVU järgi (ainult need, millel on andmed)
+  top_kontod <- fondid_turuosa %>%
+    filter(Kuupäev == maksp2ev, !is.na(`kontode arv`)) %>%
+    arrange(desc(`kontode arv`)) %>%
+    head(10)
+
+  # Värvid
+  top_arv_k <- nrow(top_kontod)
+  colors_kontod <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                     "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv_k]
+  names(colors_kontod) <- top_kontod$Lühinimi
+
+  p <- top_kontod %>%
     mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
     ggplot(aes(x = Lühinimi, y = `kontode arv`, fill = Lühinimi)) +
     geom_col() +
     theme_ft_rc() +
-    scale_fill_manual(values = colors_top) +
+    scale_fill_manual(values = colors_kontod) +
     labs(x = "", y = "osakuomanike arv",
-         title = paste0("TOP 10 fondi kontode arv (", maksp2ev, ")")) +
+         title = paste0("TOP 10 fondi kontode arvu järgi (", maksp2ev, ")")) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
           legend.position = "none")
   ggplotly(p)
@@ -601,20 +610,29 @@ if(nrow(fondid_top) > 0) {
 #### Turuosa (barplot)
 
 ```{r plot_marketshare_barplot}
-if(nrow(fondid_top) > 0) {
-  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
-  viimanep2ev <- fondid_top %>%
-    filter(Kuupäev == maksp2ev) %>%
-    arrange(desc(turuosa_maht))
+if(nrow(fondid_turuosa) > 0) {
+  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
 
-  p <- viimanep2ev %>%
+  # Võtame TOP 10 fondi TURUOSA järgi
+  top_turuosa <- fondid_turuosa %>%
+    filter(Kuupäev == maksp2ev, !is.na(turuosa_maht)) %>%
+    arrange(desc(turuosa_maht)) %>%
+    head(10)
+
+  # Värvid
+  top_arv_t <- nrow(top_turuosa)
+  colors_turuosa <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                      "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv_t]
+  names(colors_turuosa) <- top_turuosa$Lühinimi
+
+  p <- top_turuosa %>%
     mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
     ggplot(aes(x = Lühinimi, y = turuosa_maht, fill = Lühinimi)) +
     geom_col() +
     theme_ft_rc() +
-    scale_fill_manual(values = colors_top) +
+    scale_fill_manual(values = colors_turuosa) +
     labs(x = "", y = "turuosa (%)",
-         title = paste0("TOP 10 fondi turuosa mahu järgi (", maksp2ev, ")")) +
+         title = paste0("TOP 10 fondi turuosa järgi (", maksp2ev, ")")) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
           legend.position = "none")
   ggplotly(p)
