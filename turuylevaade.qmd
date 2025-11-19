@@ -189,7 +189,41 @@ fondid_maht <- fondid_maht %>%
   rename("maht" = Maht, mahu_muutus = Muutus..)
 
 fondid_info <- full_join(fondid_maht, fondid_investorid) %>%
-  select(-Fond.PIK)
+  select(-Fond.PIK) %>%
+  mutate(Lühinimi = case_when(
+    # Indeksfondid
+    Lühinimi == "TUK75" ~ "Tuleva Akt",
+    Lühinimi == "TUK00" ~ "Tuleva Võl",
+    Lühinimi == "LIK75" ~ "LHV Indeks",
+    Lühinimi == "LRK100" ~ "LHV Rohel",
+    Lühinimi == "NIK100" ~ "Lum Indeks",
+    Lühinimi == "SIK75" ~ "SEB Indeks",
+    Lühinimi == "SWK100" ~ "SW Indeks",
+    Lühinimi == "SWK99" ~ "SW Ind 90s",
+    # LHV fondid
+    Lühinimi == "LLK50" ~ "LHV L",
+    Lühinimi == "LMK25" ~ "LHV M",
+    Lühinimi == "LSK00" ~ "LHV S",
+    Lühinimi == "LXK75" ~ "LHV XL",
+    Lühinimi == "LXK00" ~ "LHV XS",
+    # Luminor fondid
+    Lühinimi == "NPK75" ~ "Lum 16-50",
+    Lühinimi == "NPK50" ~ "Lum 50-56",
+    Lühinimi == "NPK25" ~ "Lum 56+",
+    Lühinimi == "NPK00" ~ "Lum 61-65",
+    # SEB fondid
+    Lühinimi == "SEK100" ~ "SEB 18+",
+    Lühinimi == "SEK50" ~ "SEB 55+",
+    Lühinimi == "SEK25" ~ "SEB 60+",
+    Lühinimi == "SEK00" ~ "SEB 65+",
+    # Swedbank fondid
+    Lühinimi == "SWK25" ~ "SW 1960s",
+    Lühinimi == "SWK50" ~ "SW 1970s",
+    Lühinimi == "SWK75" ~ "SW 1980s",
+    Lühinimi == "SWK09" ~ "SW 2000s",
+    Lühinimi == "SWK00" ~ "SW Konsv",
+    TRUE ~ Lühinimi  # Jätab teised lühinimed samaks
+  ))
 ```
 
 
@@ -209,7 +243,7 @@ colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#
 colors_fondid <- colors[1:indeksfondid_arv]
 
 names(colors_fondid) <- unique(indeksfondid$Lühinimi)
-colors_fondid[["TUK75"]] <- "#00aeea"
+colors_fondid[["Tuleva Akt"]] <- "#00aeea"
 ```
 
 
@@ -238,13 +272,13 @@ k6ik_koos <- fondid_info %>%
 
 
 tuleva <- fondid_info %>%
-  filter(Lühinimi == "TUK75") %>%
+  filter(Lühinimi == "Tuleva Akt") %>%
   group_by(Kuupäev) %>%
   summarize(maht_tuleva = sum(maht, na.rm = TRUE), investoreid_tuleva = sum(`investeerijate arv`, na.rm = TRUE)) 
 
 
 tuleva_koos_volakiri <- fondid_info %>%
-  filter(Lühinimi == "TUK75" | Lühinimi == "TUK00") %>%
+  filter(Lühinimi == "Tuleva Akt" | Lühinimi == "Tuleva Võl") %>%
   group_by(Kuupäev) %>%
   summarize(maht_tuleva = sum(maht, na.rm = TRUE), investoreid_tuleva = sum(`investeerijate arv`, na.rm = TRUE)) 
 
@@ -625,13 +659,13 @@ make_change_plot <- function(data, months_back, var){
 
   label_pos <- filter(kuuinfo_graaf, muutus >= 0)
   label_neg <- filter(kuuinfo_graaf, muutus < 0)
-  label_pos_tuleva <- filter(kuuinfo_graaf, muutus >= 0, Lühinimi == "TUK75")
-  label_neg_tuleva <- filter(kuuinfo_graaf, muutus < 0, Lühinimi == "TUK75")
+  label_pos_tuleva <- filter(kuuinfo_graaf, muutus >= 0, Lühinimi == "Tuleva Akt")
+  label_neg_tuleva <- filter(kuuinfo_graaf, muutus < 0, Lühinimi == "Tuleva Akt")
 
   p <- kuuinfo_graaf %>%
     ggplot(aes(x = muutus, y = Lühinimi)) +
     geom_col() +
-    geom_col(data = filter(kuuinfo_graaf, Lühinimi == "TUK75"),
+    geom_col(data = filter(kuuinfo_graaf, Lühinimi == "Tuleva Akt"),
              fill = "#00aeea", color = "#00aeea") +
     theme_ft_rc() +
     labs(title = paste0(title_prefix, minp2ev, " - ", maksp2ev),
@@ -832,10 +866,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "investoreid") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -856,10 +890,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "miljonit eurot") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -878,10 +912,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Keskmine summa teistest fondidest", subtitle = period_end, x = "eurot") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -902,10 +936,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "investoreid") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -927,10 +961,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "miljonit eurot") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -948,10 +982,10 @@ graafikule <- indeks_vahetus %>%
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Keskmine summa teistesse fondidesse", subtitle = period_end, x = "eurot") +
   geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "TUK75"), 
+  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
             aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
@@ -974,16 +1008,16 @@ label_neg <- graafikule %>%
   filter(huvitav < 0)
 
 label_pos_tuleva <- graafikule %>%
-  filter(huvitav >= 0, fond == "TUK75")
+  filter(huvitav >= 0, fond == "Tuleva Akt")
 
 label_neg_tuleva <- graafikule %>%
-  filter(huvitav < 0, fond == "TUK75")
+  filter(huvitav < 0, fond == "Tuleva Akt")
 
 
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Netosumma", subtitle = period_end, x = "miljonit eurot") +
   theme_ft_rc()
 
@@ -1020,16 +1054,16 @@ label_neg <- graafikule %>%
   filter(huvitav < 0)
 
 label_pos_tuleva <- graafikule %>%
-  filter(huvitav >= 0, fond == "TUK75")
+  filter(huvitav >= 0, fond == "Tuleva Akt")
 
 label_neg_tuleva <- graafikule %>%
-  filter(huvitav < 0, fond == "TUK75")
+  filter(huvitav < 0, fond == "Tuleva Akt")
 
 
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
   geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "TUK75"), fill = "#00aeea", color = "#00aeea") +
+  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Neto investorid", subtitle = period_end, x = "investoreid") +
   theme_ft_rc()
 
