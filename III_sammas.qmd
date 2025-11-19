@@ -168,10 +168,16 @@ available_cores <- parallel::detectCores()
 worker_count <- max(1, available_cores - 1)
 plan(multisession, workers = worker_count)
 
-# Laeme KÕIKIDE fondide mahu korraga (ilma filtrita)
+# Laeme KÕIKIDE fondide mahu korraga (kõik fond ID-d)
 lae_mahud <- function() {
+  # Kõik aktiivsed fondide ID-d (pärit veebilehe HTML-ist)
+  # f[] parameetri abil saame kõigi fondide andmed
+  all_fund_ids <- c(55, 72, 87, 53, 41, 43, 34, 90, 89, 33, 79, 42, 84, 32, 85, 81)
+  fund_params <- paste0("&f[]=", all_fund_ids, collapse = "")
+
   url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls",
-                "&date_from=", from_day, "&date_to=", yesterday)
+                "&date_from=", from_day, "&date_to=", yesterday,
+                fund_params)
 
   tryCatch({
     df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
@@ -455,21 +461,22 @@ if(nrow(fondid_info) > 0) {
       turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1)
     )
 
-  # Võtame TOP 10 fondi viimase kuupäeva järgi
+  # Võtame KÕIK fondid
   maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
   top_fondid <- fondid_turuosa %>%
     filter(Kuupäev == maksp2ev) %>%
     arrange(desc(maht)) %>%
-    head(10) %>%
     pull(Lühinimi)
 
   fondid_top <- fondid_turuosa %>%
     filter(Lühinimi %in% top_fondid)
 
-  # Värvid TOP fondidele
+  # Värvid kõigile fondidele
   top_arv <- length(unique(fondid_top$Lühinimi))
-  colors_top <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                  "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv]
+  base_colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                   "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
+  # Kui fonde on rohkem kui baasvärvid, kordame neid
+  colors_top <- rep(base_colors, ceiling(top_arv / length(base_colors)))[1:top_arv]
   names(colors_top) <- unique(fondid_top$Lühinimi)
 } else {
   fondid_top <- data.frame()
@@ -494,7 +501,7 @@ if(nrow(fondid_top) > 0) {
     theme_ft_rc() +
     scale_color_manual(values = colors_top) +
     labs(x = "kuupäev", y = "turuosa (%)",
-         title = "TOP 10 fondi turuosa kontode arvu järgi")
+         title = "Fondide turuosa kontode arvu järgi")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
@@ -517,7 +524,7 @@ if(nrow(fondid_top) > 0) {
     theme_ft_rc() +
     scale_color_manual(values = colors_top) +
     labs(x = "kuupäev", y = "turuosa (%)",
-         title = "TOP 10 fondi turuosa mahu järgi")
+         title = "Fondide turuosa mahu järgi")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
@@ -540,7 +547,7 @@ if(nrow(fondid_top) > 0) {
     theme_ft_rc() +
     scale_color_manual(values = colors_top) +
     labs(x = "kuupäev", y = "osakuomanike arv",
-         title = "TOP 10 fondi osakuomanike arv")
+         title = "Fondide osakuomanike arv")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
@@ -566,7 +573,7 @@ if(nrow(fondid_top) > 0) {
     theme_ft_rc() +
     scale_color_manual(values = colors_top) +
     labs(x = "kuupäev", y = "fondi maht (milj eurot)",
-         title = "TOP 10 fondi mahud")
+         title = "Fondide mahud")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
@@ -579,16 +586,16 @@ if(nrow(fondid_top) > 0) {
 if(nrow(fondid_turuosa) > 0) {
   maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
 
-  # Võtame TOP 10 fondi KONTODE ARVU järgi (ainult need, millel on andmed)
+  # Võtame KÕIK fondid KONTODE ARVU järgi (ainult need, millel on andmed)
   top_kontod <- fondid_turuosa %>%
     filter(Kuupäev == maksp2ev, !is.na(`kontode arv`)) %>%
-    arrange(desc(`kontode arv`)) %>%
-    head(10)
+    arrange(desc(`kontode arv`))
 
   # Värvid
   top_arv_k <- nrow(top_kontod)
-  colors_kontod <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                     "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv_k]
+  base_colors_k <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                     "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
+  colors_kontod <- rep(base_colors_k, ceiling(top_arv_k / length(base_colors_k)))[1:top_arv_k]
   names(colors_kontod) <- top_kontod$Lühinimi
 
   p <- top_kontod %>%
@@ -598,7 +605,7 @@ if(nrow(fondid_turuosa) > 0) {
     theme_ft_rc() +
     scale_fill_manual(values = colors_kontod) +
     labs(x = "", y = "osakuomanike arv",
-         title = paste0("TOP 10 fondi kontode arvu järgi (", maksp2ev, ")")) +
+         title = paste0("Fondide kontode arv (", maksp2ev, ")")) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
           legend.position = "none")
   ggplotly(p)
@@ -613,16 +620,16 @@ if(nrow(fondid_turuosa) > 0) {
 if(nrow(fondid_turuosa) > 0) {
   maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
 
-  # Võtame TOP 10 fondi TURUOSA järgi
+  # Võtame KÕIK fondid TURUOSA järgi
   top_turuosa <- fondid_turuosa %>%
     filter(Kuupäev == maksp2ev, !is.na(turuosa_maht)) %>%
-    arrange(desc(turuosa_maht)) %>%
-    head(10)
+    arrange(desc(turuosa_maht))
 
   # Värvid
   top_arv_t <- nrow(top_turuosa)
-  colors_turuosa <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                      "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv_t]
+  base_colors_t <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                      "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
+  colors_turuosa <- rep(base_colors_t, ceiling(top_arv_t / length(base_colors_t)))[1:top_arv_t]
   names(colors_turuosa) <- top_turuosa$Lühinimi
 
   p <- top_turuosa %>%
@@ -632,7 +639,7 @@ if(nrow(fondid_turuosa) > 0) {
     theme_ft_rc() +
     scale_fill_manual(values = colors_turuosa) +
     labs(x = "", y = "turuosa (%)",
-         title = paste0("TOP 10 fondi turuosa järgi (", maksp2ev, ")")) +
+         title = paste0("Fondide turuosa (", maksp2ev, ")")) +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),
           legend.position = "none")
   ggplotly(p)
