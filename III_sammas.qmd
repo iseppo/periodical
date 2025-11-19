@@ -461,8 +461,24 @@ if(nrow(fondid_info) > 0) {
       turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1)
     )
 
-  # Võtame KÕIK fondid
-  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
+  # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
+  # Arvutame iga kuupäeva kohta, mitu fondi on esindatud
+  fondide_arv_kuupaeval <- fondid_turuosa %>%
+    group_by(Kuupäev) %>%
+    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
+
+  # Maksimum fondide arv (eeldame, et see on täielik andmestik)
+  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
+
+  # Viimane kuupäev, kus on maksimum fondide arv
+  maksp2ev <- fondide_arv_kuupaeval %>%
+    filter(fondide_arv == max_fondide_arv) %>%
+    pull(Kuupäev) %>%
+    max(na.rm = TRUE)
+
+  message("Kasutame kuupäeva ", maksp2ev, " (", max_fondide_arv, " fondi andmetega)")
+
+  # Võtame KÕIK fondid sellel kuupäeval
   top_fondid <- fondid_turuosa %>%
     filter(Kuupäev == maksp2ev) %>%
     arrange(desc(maht)) %>%
@@ -584,7 +600,17 @@ if(nrow(fondid_top) > 0) {
 
 ```{r plot_accounts_barplot}
 if(nrow(fondid_turuosa) > 0) {
-  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
+  # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
+  fondide_arv_kuupaeval <- fondid_turuosa %>%
+    group_by(Kuupäev) %>%
+    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
+
+  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
+
+  maksp2ev <- fondide_arv_kuupaeval %>%
+    filter(fondide_arv == max_fondide_arv) %>%
+    pull(Kuupäev) %>%
+    max(na.rm = TRUE)
 
   # Võtame KÕIK fondid KONTODE ARVU järgi (ainult need, millel on andmed)
   top_kontod <- fondid_turuosa %>%
@@ -618,7 +644,17 @@ if(nrow(fondid_turuosa) > 0) {
 
 ```{r plot_marketshare_barplot}
 if(nrow(fondid_turuosa) > 0) {
-  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
+  # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
+  fondide_arv_kuupaeval <- fondid_turuosa %>%
+    group_by(Kuupäev) %>%
+    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
+
+  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
+
+  maksp2ev <- fondide_arv_kuupaeval %>%
+    filter(fondide_arv == max_fondide_arv) %>%
+    pull(Kuupäev) %>%
+    max(na.rm = TRUE)
 
   # Võtame KÕIK fondid TURUOSA järgi
   top_turuosa <- fondid_turuosa %>%
