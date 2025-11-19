@@ -45,6 +45,28 @@ library(tibble)
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 from_day <- "2017-05-02"
 yesterday <- as.character(today() - days(1))
+
+# Funktsioon numbrite puhastamiseks (eemaldab tühikud ja asendab koma punktiga)
+puhasta_number <- function(x) {
+  if(is.numeric(x)) return(x)
+  if(is.character(x)) {
+    # Eemaldame tühikud ja asendame koma punktiga
+    x_puhastatud <- gsub(" ", "", x, fixed = TRUE)
+    x_puhastatud <- gsub(",", ".", x_puhastatud, fixed = TRUE)
+    # Teisendame numbriks
+    return(as.numeric(x_puhastatud))
+  }
+  return(as.numeric(x))
+}
+
+# Funktsioon veeru leidmiseks mustri järgi
+leia_veerg <- function(df, muster) {
+  veerg_nimi <- grep(muster, names(df), ignore.case = TRUE, value = TRUE)
+  if(length(veerg_nimi) > 0) {
+    return(veerg_nimi[1])
+  }
+  return(NULL)
+}
 ```
 
 
@@ -200,38 +222,54 @@ plan(sequential)
 if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
   if(is.character(fondid_kontod$Kuupäev)) fondid_kontod$Kuupäev <- dmy(fondid_kontod$Kuupäev)
 
-  # III sambas on veeru nimi "Osak..arv" (osalejate arv), mitte "Invest..arv"
-  # Kontrollime, milline veerg on olemas
-  if("Osak..arv" %in% names(fondid_kontod)) {
+  # Leiame dünaamiliselt veeru, mis sisaldab "arv"
+  arv_veerg <- leia_veerg(fondid_kontod, "arv")
+  muutus_veerg <- leia_veerg(fondid_kontod, "muutus")
+
+  if(!is.null(arv_veerg)) {
+    # Puhastame ja teisendame numbrid
+    fondid_kontod[[arv_veerg]] <- puhasta_number(fondid_kontod[[arv_veerg]])
+
+    # Nimetame veeru ümber
     fondid_kontod <- fondid_kontod %>%
-      rename("kontode arv" = Osak..arv, kontode_arv_muutus = Muutus..)
-  } else if("Invest..arv" %in% names(fondid_kontod)) {
-    fondid_kontod <- fondid_kontod %>%
-      rename("kontode arv" = Invest..arv, kontode_arv_muutus = Muutus..)
+      rename("kontode arv" = !!arv_veerg)
   } else {
-    # Kui kumbagi veergu ei leitud, kontrolli kas 'kontode arv' on juba olemas
-    if(!"kontode arv" %in% names(fondid_kontod)) {
-      message("Hoiatus: Ei leidnud 'Osak..arv' ega 'Invest..arv' veergu. Olemasolevad veerud: ",
-              paste(names(fondid_kontod), collapse=", "))
-      # Loome tühja 'kontode arv' veeru vältimaks vigu
-      fondid_kontod <- fondid_kontod %>%
-        mutate(`kontode arv` = NA_integer_)
-    }
-    # Kontrollime kontode_arv_muutus veeru olemasolu
-    if("Muutus.." %in% names(fondid_kontod) && !"kontode_arv_muutus" %in% names(fondid_kontod)) {
-      fondid_kontod <- fondid_kontod %>%
-        rename(kontode_arv_muutus = Muutus..)
-    }
+    message("Hoiatus: Ei leidnud veergu, mis sisaldab 'arv'. Olemasolevad veerud: ",
+            paste(names(fondid_kontod), collapse=", "))
+    fondid_kontod <- fondid_kontod %>%
+      mutate(`kontode arv` = NA_real_)
+  }
+
+  if(!is.null(muutus_veerg) && !"kontode_arv_muutus" %in% names(fondid_kontod)) {
+    fondid_kontod <- fondid_kontod %>%
+      rename(kontode_arv_muutus = !!muutus_veerg)
   }
 }
 
 if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
   if(is.character(fondid_maht$Kuupäev)) fondid_maht$Kuupäev <- dmy(fondid_maht$Kuupäev)
 
-  # Nimetame veerud ümber
-  if("Maht" %in% names(fondid_maht)) {
+  # Leiame dünaamiliselt veeru, mis sisaldab "maht"
+  maht_veerg <- leia_veerg(fondid_maht, "maht")
+  muutus_veerg <- leia_veerg(fondid_maht, "muutus")
+
+  if(!is.null(maht_veerg)) {
+    # Puhastame ja teisendame numbrid
+    fondid_maht[[maht_veerg]] <- puhasta_number(fondid_maht[[maht_veerg]])
+
+    # Nimetame veeru ümber
     fondid_maht <- fondid_maht %>%
-      rename("maht" = Maht, mahu_muutus = Muutus..)
+      rename("maht" = !!maht_veerg)
+  } else {
+    message("Hoiatus: Ei leidnud veergu, mis sisaldab 'maht'. Olemasolevad veerud: ",
+            paste(names(fondid_maht), collapse=", "))
+    fondid_maht <- fondid_maht %>%
+      mutate(maht = NA_real_)
+  }
+
+  if(!is.null(muutus_veerg) && !"mahu_muutus" %in% names(fondid_maht)) {
+    fondid_maht <- fondid_maht %>%
+      rename(mahu_muutus = !!muutus_veerg)
   }
 }
 
