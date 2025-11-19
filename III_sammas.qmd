@@ -195,7 +195,6 @@ lae_mahud <- function() {
 }
 
 # Laeme KOGUTURU kontode arvu (see on juba summa üle kõikide fondide!)
-# NB! Pensionikeskuse API ei toeta fondi-põhist kontode arvu allalaadimist.
 lae_koguturu_kontod <- function() {
   url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls",
                 "&date_from=", from_day, "&date_to=", yesterday)
@@ -218,9 +217,40 @@ lae_koguturu_kontod <- function() {
   })
 }
 
+# Laeme OSAKUOMANIKE arvu (fondi-põhine investorite/kontohoidjate arv!)
+# See pärineb peamisest statistika tabelist ja sisaldab "Osak. arv" veergu
+lae_osakuomanikud <- function() {
+  url <- "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-statistika/?download=xls"
+
+  tryCatch({
+    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+                    check.names = FALSE, stringsAsFactors = FALSE)
+
+    # Leiame õiged veerud
+    col_fond <- names(df)[1]  # Esimene veerg on fond
+    col_osak <- leia_veerg_taern(df, "osak.*arv")
+
+    if(!is.null(col_osak)) {
+      df$osakuomanikud <- puhasta_number(df[[col_osak]])
+      result <- df %>%
+        select(Fond = !!col_fond, osakuomanikud) %>%
+        filter(!is.na(osakuomanikud))
+
+      message("Laaditud ", nrow(result), " fondi osakuomanike arvud (kokku: ",
+              format(sum(result$osakuomanikud, na.rm=TRUE), big.mark=" "), ")")
+      return(result)
+    }
+    return(NULL)
+  }, error = function(e) {
+    message("Viga osakuomanike laadimisel: ", e$message)
+    return(NULL)
+  })
+}
+
 # Laeme andmed
 raw_maht <- lae_mahud()
 raw_koguturu_kontod <- lae_koguturu_kontod()
+raw_osakuomanikud <- lae_osakuomanikud()
 
 plan(sequential)
 
@@ -228,7 +258,6 @@ plan(sequential)
 if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
 
   # Määrame indeksfondid otse fondide nimede põhjal
-  # Pensionikeskuse andmetest
   fondid_info <- raw_maht %>%
     mutate(
       # Määrame, kas tegemist on indeksfondiga
@@ -239,12 +268,20 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
       )
     )
 
-  # Kui tahame säilitada vanu ID-sid (valikuline), siis võime proovida matchida
-  # kuid see ei ole enam vajalik, kuna kasutame otse Pensionikeskuse nimesid
+  # Lisame osakuomanike arvu (fondi-põhine investorite/kontohoidjate arv)
+  if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
+    fondid_info <- fondid_info %>%
+      left_join(raw_osakuomanikud, by = "Fond") %>%
+      rename(`kontode arv` = osakuomanikud)
 
-  # NB! Kontode arv on KOGUTURU kohta, mitte üksikute fondide kohta.
-  # Pensionikeskuse API ei paku fondi-põhist kontode arvu.
-  message("NB: Kontode arv on saadaval ainult koguturu kohta, mitte üksikute fondide kohta.")
+    message("✓ Lisatud fondi-põhine osakuomanike arv (",
+            nrow(raw_osakuomanikud), " fondi)")
+  } else {
+    fondid_info <- fondid_info %>%
+      mutate(`kontode arv` = NA_integer_)
+    message("! Osakuomanike andmed puuduvad")
+  }
+
   message("Laaditud fondide arv: ", length(unique(fondid_info$Fond)))
 
 } else {
@@ -304,38 +341,39 @@ if(nrow(fondid_info) > 0) {
 
 ```{r calc_totals, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame kogusummad MAHU kohta
-  k6ik_koos_maht <- fondid_info %>%
+  # Arvutame kogusummad MAHU ja KONTODE kohta
+  k6ik_koos <- fondid_info %>%
     group_by(Kuupäev) %>%
     summarize(
-      maht_kokku = sum(maht, na.rm = TRUE)
+      maht_kokku = sum(maht, na.rm = TRUE),
+      kontode_kokku = sum(`kontode arv`, na.rm = TRUE)
     )
 
-  # Lisame koguturu kontode arvu (kui see on olemas)
+  # Lisame ka koguturu kontode arvu aegridade jaoks (kui olemas)
   if(!is.null(raw_koguturu_kontod) && nrow(raw_koguturu_kontod) > 0) {
-    k6ik_koos <- k6ik_koos_maht %>%
-      left_join(raw_koguturu_kontod, by = "Kuupäev") %>%
-      rename(kontode_kokku = kontode_arv_koguturg)
-  } else {
-    k6ik_koos <- k6ik_koos_maht %>%
-      mutate(kontode_kokku = NA_integer_)
+    k6ik_koos <- k6ik_koos %>%
+      left_join(raw_koguturu_kontod, by = "Kuupäev", suffix = c("", "_api"))
   }
 
   if(nrow(indeksfondid) > 0) {
     indeksfondid_koos <- indeksfondid %>%
       group_by(Kuupäev) %>%
       summarize(
-        maht = sum(maht, na.rm = TRUE)
+        maht = sum(maht, na.rm = TRUE),
+        kontode_arv = sum(`kontode arv`, na.rm = TRUE)
       ) %>%
       left_join(k6ik_koos, by = "Kuupäev") %>%
       mutate(
-        indeks_maht_protsent = round(100 * maht / maht_kokku, 1)
+        indeks_maht_protsent = round(100 * maht / maht_kokku, 1),
+        indeks_kontode_protsent = round(100 * kontode_arv / kontode_kokku, 1)
       )
   } else {
     indeksfondid_koos <- k6ik_koos %>%
       mutate(
         maht = 0,
-        indeks_maht_protsent = 0
+        kontode_arv = 0,
+        indeks_maht_protsent = 0,
+        indeks_kontode_protsent = 0
       )
   }
 } else {
@@ -409,12 +447,12 @@ if(nrow(k6ik_koos) > 0) {
 
 ```{r calc_market_share, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame iga fondi turuosa MAHU järgi
-  # NB! Kontode arvu ei saa fondi-põhiselt arvutada, kuna API seda ei paku
+  # Arvutame iga fondi turuosa MAHU ja KONTODE järgi
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1)
+      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1),
+      turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1)
     )
 
   # Võtame TOP 10 fondi viimase kuupäeva järgi
@@ -440,6 +478,29 @@ if(nrow(fondid_info) > 0) {
 
 ::: panel-tabset
 
+#### Turuosa kontode järgi
+
+```{r plot_market_share_accounts}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(`kontode arv`))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = turuosa_kontod)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "turuosa (%)",
+         title = "TOP 10 fondi turuosa kontode arvu järgi")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
 #### Turuosa mahu järgi
 
 ```{r plot_market_share_volume}
@@ -457,6 +518,29 @@ if(nrow(fondid_top) > 0) {
     scale_color_manual(values = colors_top) +
     labs(x = "kuupäev", y = "turuosa (%)",
          title = "TOP 10 fondi turuosa mahu järgi")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+#### Kontode arv
+
+```{r plot_accounts_count}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(`kontode arv`))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = `kontode arv`)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "osakuomanike arv",
+         title = "TOP 10 fondi osakuomanike arv")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
