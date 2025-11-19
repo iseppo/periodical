@@ -168,70 +168,125 @@ available_cores <- parallel::detectCores()
 worker_count <- max(1, available_cores - 1)
 plan(multisession, workers = worker_count)
 
-lae_fondi_andmed <- function(id, fondi_nimi, tyyp) {
-  # Tyyp on kas "kontod" või "maht"
-  url_base <- if(tyyp == "kontod") {
-    "https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls"
-  } else {
-    "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls"
-  }
-  
-  full_url <- paste0(url_base, "&date_from=", from_day, "&date_to=", yesterday, "&f%5B0%5D=", id)
-  
+# Laeme KÕIKIDE fondide mahu korraga (ilma filtrita)
+lae_mahud <- function() {
+  url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls",
+                "&date_from=", from_day, "&date_to=", yesterday)
+
   tryCatch({
-    # Loeme faili sisse. Pensionikeskus kasutab tab-separated UTF-16
-    df <- read.csv2(full_url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE, 
+    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
                     check.names = FALSE, stringsAsFactors = FALSE)
-    
-    # Leiame kuupäeva veeru (tavaliselt esimene)
+
     if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
-    
-    # Leiame õige andmeveeru
-    if(tyyp == "kontod") {
-      col <- leia_veerg_taern(df, "pensionikontode.*arv") # OTSIME KONKREETSELT KONTOSID
-      if(!is.null(col)) {
-        df$vaartus <- puhasta_number(df[[col]])
-        return(df %>% select(Kuupäev, vaartus) %>% mutate(id = id, tyyp = "kontod"))
-      }
-    } else {
-      col <- leia_veerg_taern(df, "maht")
-      if(!is.null(col)) {
-        df$vaartus <- puhasta_number(df[[col]])
-        return(df %>% select(Kuupäev, vaartus) %>% mutate(id = id, tyyp = "maht"))
-      }
+
+    # Leiame mahtu veeru
+    col_maht <- leia_veerg_taern(df, "maht")
+    if(!is.null(col_maht)) {
+      df$maht <- puhasta_number(df[[col_maht]])
     }
-    return(NULL)
+
+    # Lisame ISIN-i põhjal fondi ID (match with our fondid list)
+    # Kui ISIN puudub, kasutame fondi nime
+    return(df %>% select(Kuupäev, Fond, Lühinimi, maht))
   }, error = function(e) {
-    message("Viga fondi ", id, " (", tyyp, ") laadimisel: ", e$message)
+    message("Viga mahtude laadimisel: ", e$message)
     return(NULL)
   })
 }
 
-# Laeme andmed paralleelselt
-raw_kontod <- furrr::future_map_dfr(fondid$id, ~lae_fondi_andmed(.x, "", "kontod"))
-raw_maht <- furrr::future_map_dfr(fondid$id, ~lae_fondi_andmed(.x, "", "maht"))
+# Laeme KOGUTURU kontode arvu (see on juba summa üle kõikide fondide!)
+lae_koguturu_kontod <- function() {
+  url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls",
+                "&date_from=", from_day, "&date_to=", yesterday)
+
+  tryCatch({
+    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+                    check.names = FALSE, stringsAsFactors = FALSE)
+
+    if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
+
+    col <- leia_veerg_taern(df, "pensionikontode.*arv")
+    if(!is.null(col)) {
+      df$kontode_arv_koguturg <- puhasta_number(df[[col]])
+      return(df %>% select(Kuupäev, kontode_arv_koguturg))
+    }
+    return(NULL)
+  }, error = function(e) {
+    message("Viga kontode arvu laadimisel: ", e$message)
+    return(NULL)
+  })
+}
+
+# Laeme OSAKUOMANIKE arvu (fondi-põhine investorite/kontohoidjate arv!)
+# See pärineb peamisest statistika tabelist ja sisaldab "Osak. arv" veergu
+lae_osakuomanikud <- function() {
+  url <- "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-statistika/?download=xls"
+
+  tryCatch({
+    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+                    check.names = FALSE, stringsAsFactors = FALSE)
+
+    # Leiame õiged veerud
+    col_fond <- names(df)[1]  # Esimene veerg on fond
+    col_osak <- leia_veerg_taern(df, "osak.*arv")
+
+    if(!is.null(col_osak)) {
+      df$osakuomanikud <- puhasta_number(df[[col_osak]])
+      result <- df %>%
+        select(Fond = !!col_fond, osakuomanikud) %>%
+        filter(!is.na(osakuomanikud))
+
+      message("Laaditud ", nrow(result), " fondi osakuomanike arvud (kokku: ",
+              format(sum(result$osakuomanikud, na.rm=TRUE), big.mark=" "), ")")
+      return(result)
+    }
+    return(NULL)
+  }, error = function(e) {
+    message("Viga osakuomanike laadimisel: ", e$message)
+    return(NULL)
+  })
+}
+
+# Laeme andmed
+raw_maht <- lae_mahud()
+raw_koguturu_kontod <- lae_koguturu_kontod()
+raw_osakuomanikud <- lae_osakuomanikud()
 
 plan(sequential)
 
 # 3. ANDMETE ÜHENDAMINE
-# Teeme andmed laiaks (wide format) ja ühendame
-if(nrow(raw_kontod) > 0 && nrow(raw_maht) > 0) {
-  
-  clean_kontod <- raw_kontod %>% 
-    rename(`kontode arv` = vaartus) %>% 
-    select(-tyyp)
-    
-  clean_maht <- raw_maht %>% 
-    rename(maht = vaartus) %>% 
-    select(-tyyp)
-  
-  fondid_info <- full_join(clean_maht, clean_kontod, by = c("Kuupäev", "id")) %>%
-    left_join(fondid, by = "id") %>%
-    rename(Fond = fond) %>%
-    mutate(Lühinimi = Fond) # Ühilduvus vana koodiga
-    
+if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
+
+  # Määrame indeksfondid otse fondide nimede põhjal
+  fondid_info <- raw_maht %>%
+    mutate(
+      # Määrame, kas tegemist on indeksfondiga
+      indeks = ifelse(
+        grepl("V100|Indeks|Index|Aktiivne III|18\\+|16-50|III Samba", Fond, ignore.case = TRUE),
+        "x",
+        ""
+      )
+    )
+
+  # Lisame osakuomanike arvu (fondi-põhine investorite/kontohoidjate arv)
+  if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
+    fondid_info <- fondid_info %>%
+      left_join(raw_osakuomanikud, by = "Fond") %>%
+      rename(`kontode arv` = osakuomanikud)
+
+    message("✓ Lisatud fondi-põhine osakuomanike arv (",
+            nrow(raw_osakuomanikud), " fondi)")
+  } else {
+    fondid_info <- fondid_info %>%
+      mutate(`kontode arv` = NA_integer_)
+    message("! Osakuomanike andmed puuduvad")
+  }
+
+  message("Laaditud fondide arv: ", length(unique(fondid_info$Fond)))
+
 } else {
   fondid_info <- data.frame()
+  message("Andmete laadimine ebaõnnestus.")
 }
 ```
 
@@ -241,8 +296,9 @@ if(nrow(raw_kontod) > 0 && nrow(raw_maht) > 0) {
 ```{r filter_index_funds, message=FALSE, warning=FALSE, include=FALSE}
 # Filtreerime indeksfondid, kui need on märgitud
 if(nrow(fondid_info) > 0) {
+  # Kasutame 'indeks' veergu, mis lisati fondid tabelist
   indeksfondid <- fondid_info %>%
-    filter(Fond %in% fondid$fond[fondid$indeks == "x"])
+    filter(!is.na(indeks) & indeks == "x")
 } else {
   indeksfondid <- fondid_info
 }
@@ -285,13 +341,19 @@ if(nrow(fondid_info) > 0) {
 
 ```{r calc_totals, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame kogusummad
+  # Arvutame kogusummad MAHU ja KONTODE kohta
   k6ik_koos <- fondid_info %>%
     group_by(Kuupäev) %>%
     summarize(
       maht_kokku = sum(maht, na.rm = TRUE),
       kontode_kokku = sum(`kontode arv`, na.rm = TRUE)
     )
+
+  # Lisame ka koguturu kontode arvu aegridade jaoks (kui olemas)
+  if(!is.null(raw_koguturu_kontod) && nrow(raw_koguturu_kontod) > 0) {
+    k6ik_koos <- k6ik_koos %>%
+      left_join(raw_koguturu_kontod, by = "Kuupäev", suffix = c("", "_api"))
+  }
 
   if(nrow(indeksfondid) > 0) {
     indeksfondid_koos <- indeksfondid %>%
@@ -385,12 +447,12 @@ if(nrow(k6ik_koos) > 0) {
 
 ```{r calc_market_share, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame iga fondi turuosa
+  # Arvutame iga fondi turuosa MAHU ja KONTODE järgi
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1),
-      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1)
+      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1),
+      turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1)
     )
 
   # Võtame TOP 10 fondi viimase kuupäeva järgi
@@ -477,8 +539,8 @@ if(nrow(fondid_top) > 0) {
     geom_line(aes(color = Lühinimi)) +
     theme_ft_rc() +
     scale_color_manual(values = colors_top) +
-    labs(x = "kuupäev", y = "pensionikontode arv",
-         title = "TOP 10 fondi pensionikontode arv")
+    labs(x = "kuupäev", y = "osakuomanike arv",
+         title = "TOP 10 fondi osakuomanike arv")
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
