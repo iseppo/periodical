@@ -199,20 +199,26 @@ plan(sequential)
 ```{r message=FALSE, warning=FALSE, include=FALSE}
 if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
   if(is.character(fondid_kontod$Kuupäev)) fondid_kontod$Kuupäev <- dmy(fondid_kontod$Kuupäev)
+
+  # III sambas on veeru nimi "Osak..arv" (osalejate arv), mitte "Invest..arv"
+  # Kontrollime, milline veerg on olemas
+  if("Osak..arv" %in% names(fondid_kontod)) {
+    fondid_kontod <- fondid_kontod %>%
+      rename("kontode arv" = Osak..arv, kontode_arv_muutus = Muutus..)
+  } else if("Invest..arv" %in% names(fondid_kontod)) {
+    fondid_kontod <- fondid_kontod %>%
+      rename("kontode arv" = Invest..arv, kontode_arv_muutus = Muutus..)
+  }
 }
+
 if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
   if(is.character(fondid_maht$Kuupäev)) fondid_maht$Kuupäev <- dmy(fondid_maht$Kuupäev)
-}
 
-# Nimetame veerud ümber III samba kontekstis
-if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
-  fondid_kontod <- fondid_kontod %>%
-    rename("kontode arv" = Invest..arv, kontode_arv_muutus = Muutus..)
-}
-
-if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
-  fondid_maht <- fondid_maht %>%
-    rename("maht" = Maht, mahu_muutus = Muutus..)
+  # Nimetame veerud ümber
+  if("Maht" %in% names(fondid_maht)) {
+    fondid_maht <- fondid_maht %>%
+      rename("maht" = Maht, mahu_muutus = Muutus..)
+  }
 }
 
 # Ühendame andmed
