@@ -191,32 +191,32 @@ fondid_maht <- fondid_maht %>%
 fondid_info <- full_join(fondid_maht, fondid_investorid) %>%
   select(-Fond.PIK) %>%
   mutate(Lühinimi = case_when(
-    # Indeksfondid
+    # Tuleva indeksfondid
     Lühinimi == "TUK75" ~ "Tuleva Akt",
     Lühinimi == "TUK00" ~ "Tuleva Võl",
+    # LHV fondid (uued nimed alates 2.09.2025)
     Lühinimi == "LIK75" ~ "LHV Indeks",
-    Lühinimi == "LRK100" ~ "LHV Rohel",
-    Lühinimi == "NIK100" ~ "Lum Indeks",
-    Lühinimi == "SIK75" ~ "SEB Indeks",
-    Lühinimi == "SWK100" ~ "SW Indeks",
-    Lühinimi == "SWK99" ~ "SW Ind 90s",
-    # LHV fondid
-    Lühinimi == "LLK50" ~ "LHV L",
-    Lühinimi == "LMK25" ~ "LHV M",
-    Lühinimi == "LSK00" ~ "LHV S",
-    Lühinimi == "LXK75" ~ "LHV XL",
-    Lühinimi == "LXK00" ~ "LHV XS",
+    Lühinimi == "LXK75" ~ "LHV Julge",      # varem XL, ühines Rohelisega
+    Lühinimi == "LRK100" ~ "LHV Julge",     # Roheline ühines XL-ga -> Julge
+    Lühinimi == "LLK50" ~ "LHV Ettev",      # varem L
+    Lühinimi == "LMK25" ~ "LHV Tasak",      # varem M, ühines S-ga
+    Lühinimi == "LSK00" ~ "LHV Tasak",      # S ühines M-ga -> Tasakaalukas
+    Lühinimi == "LXK00" ~ "LHV Rahul",      # varem XS
     # Luminor fondid
+    Lühinimi == "NIK100" ~ "Lum Indeks",
     Lühinimi == "NPK75" ~ "Lum 16-50",
     Lühinimi == "NPK50" ~ "Lum 50-56",
     Lühinimi == "NPK25" ~ "Lum 56+",
     Lühinimi == "NPK00" ~ "Lum 61-65",
     # SEB fondid
+    Lühinimi == "SIK75" ~ "SEB Indeks",
     Lühinimi == "SEK100" ~ "SEB 18+",
     Lühinimi == "SEK50" ~ "SEB 55+",
     Lühinimi == "SEK25" ~ "SEB 60+",
     Lühinimi == "SEK00" ~ "SEB 65+",
     # Swedbank fondid
+    Lühinimi == "SWK100" ~ "SW Indeks",
+    Lühinimi == "SWK99" ~ "SW 1990s",       # indeks 1990-99 sündinutele
     Lühinimi == "SWK25" ~ "SW 1960s",
     Lühinimi == "SWK50" ~ "SW 1970s",
     Lühinimi == "SWK75" ~ "SW 1980s",
