@@ -2,15 +2,17 @@
 library(rvest)
 library(dplyr)
 
-url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-pensionifondid/"
+# Korrektne URL kolmanda samba fondide jaoks
+url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-fondid/fonditasude-vordlus/"
 
 tryCatch({
   fondid_html <- read_html(url)
 
-  # Vali kõik <a> elemendid klassi "fund" all
-  fund_links <- fondid_html %>% html_nodes("a.fund")
+  # Leia kõik lingid, mis viitavad fondidele
+  # Kolmanda samba fondide URL muster: /iii-sammas/vabatahtlikud-fondid/fid/[ID]/
+  fund_links <- fondid_html %>% html_nodes("a[href*='/fid/']")
 
-  # Ekstrakti 'href' atribuut, et saada fondi URL-id
+  # Ekstrakti 'href' atribuut
   fund_urls <- html_attr(fund_links, "href")
 
   # Ekstrakti fondi ID-d URL-idest
@@ -20,16 +22,25 @@ tryCatch({
   })
   fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)
 
-  # Ekstrakti 'title' atribuut fondi nimetuste jaoks
-  fund_titles <- html_attr(fund_links, "title")
+  # Ekstrakti fondi nimetused (lingi tekst)
+  fund_titles <- html_text(fund_links, trim = TRUE)
 
-  # Kombineeri ID-d ja nimetused andmestikuks
+  # Eemalda duplikaadid (sama fond võib esineda mitmes kohas)
   fund_info <- data.frame(
     id = fund_ids,
     fond = fund_titles,
-    indeks = "",  # Täidetakse hiljem käsitsi
     stringsAsFactors = FALSE
-  )
+  ) %>%
+    filter(!is.na(id)) %>%
+    distinct(id, .keep_all = TRUE) %>%
+    mutate(
+      # Märgime indeksfondid automaatselt nime järgi
+      indeks = ifelse(
+        grepl("indeks|Indeks|index|Index", fond, ignore.case = TRUE),
+        "x",
+        ""
+      )
+    )
 
   # Salvesta CSV-sse
   write.csv(fund_info, "Pensionifondid_III.csv", row.names = FALSE, fileEncoding = "UTF-8")
@@ -39,14 +50,17 @@ tryCatch({
 
 }, error = function(e) {
   cat("Viga fondide loendi hankimisel:", conditionMessage(e), "\n")
-  cat("Loome tühja faili...\n")
+  cat("Kasutame olemasolevat Pensionifondid_III.csv faili või loome uue...\n")
 
-  # Loo tühi fail struktuuriga
-  empty_df <- data.frame(
-    id = character(),
-    fond = character(),
-    indeks = character(),
-    stringsAsFactors = FALSE
-  )
-  write.csv(empty_df, "Pensionifondid_III.csv", row.names = FALSE, fileEncoding = "UTF-8")
+  # Kontrolli, kas fail juba eksisteerib
+  if(!file.exists("Pensionifondid_III.csv") || file.size("Pensionifondid_III.csv") < 50) {
+    # Kui faili pole või on tühi, loo tühi struktuur
+    empty_df <- data.frame(
+      id = character(),
+      fond = character(),
+      indeks = character(),
+      stringsAsFactors = FALSE
+    )
+    write.csv(empty_df, "Pensionifondid_III.csv", row.names = FALSE, fileEncoding = "UTF-8")
+  }
 })
