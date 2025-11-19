@@ -227,7 +227,8 @@ if(nrow(raw_kontod) > 0 && nrow(raw_maht) > 0) {
   
   fondid_info <- full_join(clean_maht, clean_kontod, by = c("Kuupäev", "id")) %>%
     left_join(fondid, by = "id") %>%
-    rename(Fond = fond, Lühinimi = fond) # Ühilduvus vana koodiga
+    rename(Fond = fond) %>%
+    mutate(Lühinimi = Fond) # Ühilduvus vana koodiga
     
 } else {
   fondid_info <- data.frame()
