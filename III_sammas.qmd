@@ -284,7 +284,7 @@ if(nrow(fondid_info) > 0) {
 # Määrame värvid
 if(nrow(indeksfondid) > 0) {
   indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
-  colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0")
+  colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
   colors_fondid <- colors[1:min(indeksfondid_arv, length(colors))]
   names(colors_fondid) <- unique(indeksfondid$Lühinimi)
 }
