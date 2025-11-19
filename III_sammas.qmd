@@ -294,7 +294,7 @@ if(nrow(fondid_info) > 0) {
 ```
 
 
-```{r}
+```{r include=FALSE}
 # Määrame värvid
 if(nrow(indeksfondid) > 0) {
   indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
@@ -305,7 +305,7 @@ if(nrow(indeksfondid) > 0) {
 ```
 
 
-```{r}
+```{r include=FALSE}
 if(nrow(fondid_info) > 0) {
   andmed_alates <- min(fondid_info$Kuupäev, na.rm = TRUE)
   andmed_kuni <- max(fondid_info$Kuupäev, na.rm = TRUE)
@@ -317,12 +317,12 @@ if(nrow(fondid_info) > 0) {
 
 # Kolmanda samba ülevaade
 
-```{r eval=!is.na(andmed_alates)}
-cat("Andmed:", andmed_alates, "--", andmed_kuni, "\n")
-```
-
-```{r eval=is.na(andmed_alates)}
-cat("Andmete laadimine ebaõnnestus. Palun kontrolli Pensionifondid_III.csv faili ja veendu, et seal on fondide ID-d määratud.\n\nVõid kasutada skripti fetch_iii_sammas_fondid.R fondide nimekirja hankimiseks.")
+```{r}
+if(nrow(fondid_info) > 0) {
+  cat("Andmed:", as.character(andmed_alates), "--", as.character(andmed_kuni), "\n")
+} else {
+  cat("Andmete laadimine ebaõnnestus. Palun kontrolli Pensionifondid_III.csv faili ja veendu, et seal on fondide ID-d määratud.\n\nVõid kasutada skripti fetch_iii_sammas_fondid.R fondide nimekirja hankimiseks.")
+}
 ```
 
 ::: panel-tabset
