@@ -168,10 +168,16 @@ available_cores <- parallel::detectCores()
 worker_count <- max(1, available_cores - 1)
 plan(multisession, workers = worker_count)
 
-# Laeme KÕIKIDE fondide mahu korraga (ilma filtrita)
+# Laeme KÕIKIDE fondide mahu korraga (kõik fond ID-d)
 lae_mahud <- function() {
+  # Kõik aktiivsed fondide ID-d (pärit veebilehe HTML-ist)
+  # f[] parameetri abil saame kõigi fondide andmed
+  all_fund_ids <- c(55, 72, 87, 53, 41, 43, 34, 90, 89, 33, 79, 42, 84, 32, 85, 81)
+  fund_params <- paste0("&f[]=", all_fund_ids, collapse = "")
+
   url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls",
-                "&date_from=", from_day, "&date_to=", yesterday)
+                "&date_from=", from_day, "&date_to=", yesterday,
+                fund_params)
 
   tryCatch({
     df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
