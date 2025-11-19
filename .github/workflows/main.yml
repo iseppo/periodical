@@ -46,11 +46,25 @@ jobs:
             echo '--- Rendering Quarto reports ---'
             quarto render turuylevaade.qmd
             quarto render tuleva.qmd
+
+            echo '--- Fetching III sammas fund list ---'
+            Rscript fetch_iii_sammas_fondid.R || echo 'III sammas fund list fetch failed, continuing...'
+
+            echo '--- Rendering III sammas report ---'
+            quarto render III_sammas.qmd || echo 'III sammas rendering failed, continuing...'
             
             echo '--- Uploading files to server ---'
             scp ./aastane_tulu_tuleva_lhv.png ./kihlvedu.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
-            
+
             scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+
+            # Upload III sammas files if they exist
+            if [ -f III_sammas.html ]; then
+              echo 'Uploading III sammas files...'
+              scp ./III_sammas.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+              [ -f iii_sammas_koguturg.csv ] && scp ./iii_sammas_koguturg.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+              [ -f iii_sammas_top_fondid.csv ] && scp ./iii_sammas_top_fondid.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+            fi
             
             # Lae üles tuleva_files kaust (kui eksisteerib) SÄILITADES struktuuri
             if [ -d tuleva_files ]; then

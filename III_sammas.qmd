@@ -1,0 +1,522 @@
+---
+title: "Kolmas sammas - turuülevaade"
+date: today
+date-format: long
+lang: et_EE
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    toc-title: Sisukord
+    toc-location: right
+    number-sections: false
+    number-depth: 3
+    html-math-method: katex
+    self-contained: true
+    anchor-sections: true
+    smooth-scroll: true
+    theme: slate
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+
+
+```{r message=FALSE}
+library(dplyr)
+library(tidyr)
+library(forcats)
+library(ggplot2)
+library(readr)
+library(stringr)
+library(lubridate)
+library(hrbrthemes)
+library(plotly)
+library(jsonlite)
+library(rvest)
+library(furrr)
+library(future)
+library(parallel)
+library(tibble)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+from_day <- "2017-05-02"
+yesterday <- as.character(today() - days(1))
+```
+
+
+```{r fondid_online}
+
+url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-pensionifondid/"
+fondid_html <- read_html(url)
+
+# Select all <a> elements with class "fund"
+fund_links <- fondid_html %>% html_nodes("a.fund")
+
+# Extract the 'href' attribute to get fund URLs
+fund_urls <- html_attr(fund_links, "href")
+
+# Extract the fund IDs from the URLs
+fund_ids <- sapply(fund_urls, function(url) {
+    matches <- regexpr("/fid/(\\d+)/", url)
+    ifelse(matches > 0, regmatches(url, matches), NA)
+})
+fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)
+
+# Extract the 'title' attribute for fund titles
+fund_titles <- html_attr(fund_links, "title")
+
+# Combine the IDs and titles into a data frame
+fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE)
+
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
+
+# Kui fail on tühi või pole veel täidetud, kasutame veebist leitud andmeid
+if(nrow(fondid) == 0) {
+  fondid <- fund_info %>%
+    rename(id = ID, fond = Title) %>%
+    mutate(indeks = "")
+} else {
+  fondid$fond <- NULL
+  fondid <- fondid %>%
+    mutate(id = as.character(id)) %>%
+    left_join(select(fund_info, Title, ID), by = c("id" = "ID")) %>%
+    rename(fond = Title)
+}
+
+puuduvad <- fund_info %>%
+  filter(!ID %in% fondid$id)
+puudu <- FALSE
+if(nrow(puuduvad) > 0) puudu <- TRUE
+```
+
+
+```{r eval = puudu}
+cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
+```
+
+
+```{r lae_alla_info, warning=FALSE, include=FALSE}
+# Laadime kolmanda samba andmed
+# III sambas on pensionikontode arv ja fondide maht
+
+available_cores <- parallel::detectCores()
+worker_count <- max(2, available_cores - 1)
+plan(multisession, workers = worker_count)
+
+fondid_kontod <- furrr::future_map_dfr(fondid$id, function(i) {
+  message("tõmban kontode andmeid fondist ", fondid$fond[fondid$id == i])
+  url_kontod <- paste0(
+    "https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls&date_from=",
+    from_day,
+    "&date_to=",
+    yesterday,
+    "&f%5B0%5D=",
+    i
+  )
+  tryCatch({
+    read.csv2(
+      url_kontod,
+      fileEncoding = "UTF-16",
+      header = TRUE,
+      sep = "\t",
+      colClasses = c(
+        "character",
+        "character",
+        "character",
+        "character",
+        "integer",
+        "character"
+      )
+    )
+  }, error = function(e) {
+    message("Viga fondi ", i, " andmete laadimisel: ", e$message)
+    return(NULL)
+  })
+})
+
+fondid_maht <- furrr::future_map_dfr(fondid$id, function(i) {
+  message("tõmban mahu andmeid fondist ", fondid$fond[fondid$id == i])
+  url_maht <- paste0(
+    "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls&date_from=",
+    from_day,
+    "&date_to=",
+    yesterday,
+    "&f%5B0%5D=",
+    i
+  )
+  tryCatch({
+    read.csv2(
+      url_maht,
+      fileEncoding = "UTF-16",
+      header = TRUE,
+      sep = "\t",
+      colClasses = c(
+        "character",
+        "character",
+        "character",
+        "character",
+        "integer",
+        "character"
+      )
+    )
+  }, error = function(e) {
+    message("Viga fondi ", i, " andmete laadimisel: ", e$message)
+    return(NULL)
+  })
+})
+plan(sequential)
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
+  if(is.character(fondid_kontod$Kuupäev)) fondid_kontod$Kuupäev <- dmy(fondid_kontod$Kuupäev)
+}
+if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
+  if(is.character(fondid_maht$Kuupäev)) fondid_maht$Kuupäev <- dmy(fondid_maht$Kuupäev)
+}
+
+# Nimetame veerud ümber III samba kontekstis
+if(!is.null(fondid_kontod) && nrow(fondid_kontod) > 0) {
+  fondid_kontod <- fondid_kontod %>%
+    rename("kontode arv" = Invest..arv, kontode_arv_muutus = Muutus..)
+}
+
+if(!is.null(fondid_maht) && nrow(fondid_maht) > 0) {
+  fondid_maht <- fondid_maht %>%
+    rename("maht" = Maht, mahu_muutus = Muutus..)
+}
+
+# Ühendame andmed
+if(!is.null(fondid_kontod) && !is.null(fondid_maht) &&
+   nrow(fondid_kontod) > 0 && nrow(fondid_maht) > 0) {
+  fondid_info <- full_join(fondid_maht, fondid_kontod) %>%
+    select(-contains("Fond.PIK"))
+
+  # Lisame lühinimed (kui need on defineeritud)
+  # III samba fondide lühinimed võivad olla erinevad, praegu kasutame fondi nime
+  if(!"Lühinimi" %in% names(fondid_info)) {
+    fondid_info <- fondid_info %>%
+      mutate(Lühinimi = Fond)
+  }
+} else {
+  # Kui andmeid ei õnnestunud laadida, loome tühja andmestiku
+  fondid_info <- data.frame(
+    Kuupäev = as.Date(character()),
+    Fond = character(),
+    Lühinimi = character(),
+    maht = numeric(),
+    `kontode arv` = integer(),
+    stringsAsFactors = FALSE
+  )
+  names(fondid_info)[5] <- "kontode arv"
+}
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+# Filtreerime indeksfondid, kui need on märgitud
+if(nrow(fondid_info) > 0) {
+  indeksfondid <- fondid_info %>%
+    filter(Fond %in% fondid$fond[fondid$indeks == "x"])
+} else {
+  indeksfondid <- fondid_info
+}
+```
+
+
+```{r}
+# Määrame värvid
+if(nrow(indeksfondid) > 0) {
+  indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
+  colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0")
+  colors_fondid <- colors[1:min(indeksfondid_arv, length(colors))]
+  names(colors_fondid) <- unique(indeksfondid$Lühinimi)
+}
+```
+
+
+```{r}
+if(nrow(fondid_info) > 0) {
+  andmed_alates <- min(fondid_info$Kuupäev, na.rm = TRUE)
+  andmed_kuni <- max(fondid_info$Kuupäev, na.rm = TRUE)
+} else {
+  andmed_alates <- NA
+  andmed_kuni <- NA
+}
+```
+
+# Kolmanda samba ülevaade
+
+```{r eval=!is.na(andmed_alates)}
+cat("Andmed:", andmed_alates, "--", andmed_kuni, "\n")
+```
+
+```{r eval=is.na(andmed_alates)}
+cat("Andmete laadimine ebaõnnestus. Palun kontrolli Pensionifondid_III.csv faili ja veendu, et seal on fondide ID-d määratud.\n\nVõid kasutada skripti fetch_iii_sammas_fondid.R fondide nimekirja hankimiseks.")
+```
+
+::: panel-tabset
+
+
+```{r include=FALSE}
+if(nrow(fondid_info) > 0) {
+  # Arvutame kogusummad
+  k6ik_koos <- fondid_info %>%
+    group_by(Kuupäev) %>%
+    summarize(
+      maht_kokku = sum(maht, na.rm = TRUE),
+      kontode_kokku = sum(`kontode arv`, na.rm = TRUE)
+    )
+
+  if(nrow(indeksfondid) > 0) {
+    indeksfondid_koos <- indeksfondid %>%
+      group_by(Kuupäev) %>%
+      summarize(
+        maht = sum(maht, na.rm = TRUE),
+        kontode_arv = sum(`kontode arv`, na.rm = TRUE)
+      ) %>%
+      left_join(k6ik_koos, by = "Kuupäev") %>%
+      mutate(
+        indeks_maht_protsent = round(100 * maht / maht_kokku, 1),
+        indeks_kontode_protsent = round(100 * kontode_arv / kontode_kokku, 1)
+      )
+  } else {
+    indeksfondid_koos <- k6ik_koos %>%
+      mutate(
+        maht = 0,
+        kontode_arv = 0,
+        indeks_maht_protsent = 0,
+        indeks_kontode_protsent = 0
+      )
+  }
+} else {
+  indeksfondid_koos <- data.frame()
+  k6ik_koos <- data.frame()
+}
+```
+
+#### Koguturu maht
+
+```{r}
+if(nrow(k6ik_koos) > 0) {
+  options(scipen = 999)
+
+  koguturu_maht <- k6ik_koos %>%
+    mutate(maht_milj = round(maht_kokku / 1000000, 1)) %>%
+    mutate(maht_label = format(maht_milj, big.mark = " ", decimal.mark = ","))
+
+  p <- koguturu_maht %>%
+    ggplot(aes(x = Kuupäev, y = maht_milj)) +
+    geom_line() +
+    theme_ft_rc() +
+    geom_blank(aes(x = min(Kuupäev), y = 0)) +
+    labs(title = "Kolmanda samba koguturu maht",
+         x = "kuupäev",
+         y = "maht (miljonit eurot)") +
+    geom_point(data = filter(koguturu_maht, Kuupäev == max(Kuupäev)),
+               size = 2, color = "orange") +
+    geom_text(data = filter(koguturu_maht, Kuupäev == max(Kuupäev)),
+              aes(label = maht_label), nudge_x = 150, color = "orange")
+
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+
+#### Koguturu kontod
+
+```{r}
+if(nrow(k6ik_koos) > 0) {
+  options(scipen = 999)
+
+  koguturu_kontod <- k6ik_koos %>%
+    mutate(kontode_label = format(kontode_kokku, big.mark = " ", decimal.mark = ","))
+
+  p <- koguturu_kontod %>%
+    ggplot(aes(x = Kuupäev, y = kontode_kokku)) +
+    geom_line() +
+    theme_ft_rc() +
+    geom_blank(aes(x = min(Kuupäev), y = 0)) +
+    labs(title = "Kolmanda samba pensionikontode arv",
+         x = "kuupäev",
+         y = "pensionikontode arv") +
+    geom_point(data = filter(koguturu_kontod, Kuupäev == max(Kuupäev)),
+               size = 2, color = "orange") +
+    geom_text(data = filter(koguturu_kontod, Kuupäev == max(Kuupäev)),
+              aes(label = kontode_label), nudge_x = 180, color = "orange")
+
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+:::
+
+
+# Fondide võrdlus
+
+```{r include=FALSE}
+if(nrow(fondid_info) > 0) {
+  # Arvutame iga fondi turuosa
+  fondid_turuosa <- fondid_info %>%
+    group_by(Kuupäev) %>%
+    mutate(
+      turuosa_kontod = round(100 * `kontode arv` / sum(`kontode arv`, na.rm = TRUE), 1),
+      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1)
+    )
+
+  # Võtame TOP 10 fondi viimase kuupäeva järgi
+  maksp2ev <- max(fondid_turuosa$Kuupäev, na.rm = TRUE)
+  top_fondid <- fondid_turuosa %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(maht)) %>%
+    head(10) %>%
+    pull(Lühinimi)
+
+  fondid_top <- fondid_turuosa %>%
+    filter(Lühinimi %in% top_fondid)
+
+  # Värvid TOP fondidele
+  top_arv <- length(unique(fondid_top$Lühinimi))
+  colors_top <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                  "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")[1:top_arv]
+  names(colors_top) <- unique(fondid_top$Lühinimi)
+} else {
+  fondid_top <- data.frame()
+}
+```
+
+::: panel-tabset
+
+#### Turuosa kontode järgi
+
+```{r}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(`kontode arv`))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = turuosa_kontod)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "turuosa (%)",
+         title = "TOP 10 fondi turuosa kontode arvu järgi")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+#### Turuosa mahu järgi
+
+```{r}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(turuosa_maht))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = turuosa_maht)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "turuosa (%)",
+         title = "TOP 10 fondi turuosa mahu järgi")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+#### Kontode arv
+
+```{r}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(`kontode arv`))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = `kontode arv`)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "pensionikontode arv",
+         title = "TOP 10 fondi pensionikontode arv")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+#### Maht
+
+```{r}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(maht))
+
+  fondid_top <- fondid_top %>%
+    mutate(maht_milj = round(maht / 1000000, 1))
+
+  p <- fondid_top %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
+    ggplot(aes(x = Kuupäev, y = maht_milj)) +
+    geom_line(aes(color = Lühinimi)) +
+    theme_ft_rc() +
+    scale_color_manual(values = colors_top) +
+    labs(x = "kuupäev", y = "fondi maht (milj eurot)",
+         title = "TOP 10 fondi mahud")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+:::
+
+
+```{r include=FALSE}
+# Salvestame andmed CSV-sse
+if(nrow(fondid_info) > 0) {
+  write_csv(k6ik_koos, file = "iii_sammas_koguturg.csv")
+
+  if(nrow(fondid_top) > 0) {
+    write_csv(fondid_top, file = "iii_sammas_top_fondid.csv")
+  }
+}
+```
+
+# Teave
+
+See analüüs põhineb Pensionikeskuse avalikult kättesaadavatel andmetel kolmanda samba (vabatahtlike pensionifondide) kohta.
+
+Kolmas sammas on vabatahtlik pensionisüsteem, kus inimesed saavad koguda pensioniks täiendavalt. Erinevalt teisest sambast (kohustuslik pensionisammas) on kolmandas sambas osalemine vabatahtlik.
+
+**Andmeallikad:**
+
+- Pensionikontode arv: [Pensionikeskus III sammas](https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/)
+- Fondide maht: [Pensionikeskus III sammas](https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/)
+
