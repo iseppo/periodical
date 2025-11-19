@@ -279,6 +279,12 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
   # Määrame indeksfondid otse fondide nimede põhjal
   fondid_info <- raw_maht %>%
     mutate(
+      # Eemaldame "pensionifond" sõna nimedest
+      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
+      Lühinimi = str_replace_all(Lühinimi, regex("pensionifond", ignore_case = TRUE), ""),
+      # Puhastame üleliigsed tühikud
+      Fond = str_trim(Fond),
+      Lühinimi = str_trim(Lühinimi),
       # Määrame, kas tegemist on indeksfondiga
       indeks = ifelse(
         grepl("V100|Indeks|Index|Aktiivne III|18\\+|16-50|III Samba", Fond, ignore.case = TRUE),
@@ -535,6 +541,9 @@ if(nrow(fondid_info) > 0) {
 if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
   kontode_turuosa_viimane <- raw_osakuomanikud %>%
     mutate(
+      # Eemaldame "pensionifond" sõna nimedest
+      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
+      Fond = str_trim(Fond),
       turuosa_kontod = round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1)
     ) %>%
     arrange(desc(osakuomanikud))
