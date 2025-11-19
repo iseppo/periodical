@@ -573,6 +573,56 @@ if(nrow(fondid_top) > 0) {
 }
 ```
 
+#### Kontode arv (barplot)
+
+```{r plot_accounts_barplot}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(`kontode arv`))
+
+  p <- viimanep2ev %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
+    ggplot(aes(x = Lühinimi, y = `kontode arv`, fill = Lühinimi)) +
+    geom_col() +
+    theme_ft_rc() +
+    scale_fill_manual(values = colors_top) +
+    labs(x = "", y = "osakuomanike arv",
+         title = paste0("TOP 10 fondi kontode arv (", maksp2ev, ")")) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
+#### Turuosa (barplot)
+
+```{r plot_marketshare_barplot}
+if(nrow(fondid_top) > 0) {
+  maksp2ev <- max(fondid_top$Kuupäev, na.rm = TRUE)
+  viimanep2ev <- fondid_top %>%
+    filter(Kuupäev == maksp2ev) %>%
+    arrange(desc(turuosa_maht))
+
+  p <- viimanep2ev %>%
+    mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
+    ggplot(aes(x = Lühinimi, y = turuosa_maht, fill = Lühinimi)) +
+    geom_col() +
+    theme_ft_rc() +
+    scale_fill_manual(values = colors_top) +
+    labs(x = "", y = "turuosa (%)",
+         title = paste0("TOP 10 fondi turuosa mahu järgi (", maksp2ev, ")")) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1),
+          legend.position = "none")
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
 :::
 
 
