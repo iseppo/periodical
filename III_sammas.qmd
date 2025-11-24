@@ -139,6 +139,22 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 csv_ajalugu <- "iii_sammas_ajalugu.csv"
 yesterday <- as.character(today() - days(1))
 
+# UUENDUS: Laeme alla olemasoleva andmebaasi veebiserverist (kui see on olemas)
+andmebaas_url <- "https://www.seppo.ai/tuleva/iii_sammas_ajalugu.csv"
+
+# Püüame alla laadida olemasoleva andmebaasi
+if(!file.exists(csv_ajalugu)) {
+  message("Püüan laadida alla olemasoleva andmebaasi veebiserverist...")
+  tryCatch({
+    download.file(andmebaas_url, csv_ajalugu, method = "auto", quiet = TRUE)
+    if(file.exists(csv_ajalugu) && file.size(csv_ajalugu) > 0) {
+      message("✓ Andmebaas edukalt alla laaditud veebiserverist")
+    }
+  }, error = function(e) {
+    message("ℹ Andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
+  })
+}
+
 if(file.exists(csv_ajalugu)) {
   # Kui CSV eksisteerib, laeme ainult viimased 7 päeva
   vanad_andmed <- read_csv(csv_ajalugu, show_col_types = FALSE)
