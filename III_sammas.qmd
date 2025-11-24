@@ -310,18 +310,44 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
       )
     )
 
-  # MÄRKUS: Osakuomanike arv (kontode arv) on saadaval AINULT viimase päeva kohta
-  # Ajalugu ei ole võimalik alla laadida
-  # Seetõttu EI lisata seda siia fondid_info tabelisse (mis sisaldab ajalugu)
-  # Osakuomanike andmeid kasutatakse ainult viimase päeva graafikutes
+  # Lisame osakuomanike (kontode) arvu viimase kuupäeva kohta
+  # Pensionikeskus avaldab seda ainult värskeima seisu kohta, nii et
+  # ajaloo ehitame üles jooksvalt CSV faili täiendades.
+  viimane_kuupaev <- max(fondid_info$Kuupäev, na.rm = TRUE)
+  fondid_info <- fondid_info %>% mutate(osakuomanikud = NA_integer_)
+
+  if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
+    osakuomanikud_puhas <- raw_osakuomanikud %>%
+      mutate(
+        Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
+        Fond = str_trim(Fond),
+        osakuomanikud_uus = as.integer(osakuomanikud)
+      ) %>%
+      select(Fond, osakuomanikud_uus)
+
+    fondid_info <- fondid_info %>%
+      left_join(osakuomanikud_puhas, by = "Fond") %>%
+      mutate(
+        osakuomanikud = ifelse(Kuupäev == viimane_kuupaev, osakuomanikud_uus, osakuomanikud)
+      ) %>%
+      select(-osakuomanikud_uus)
+
+    message("✓ Lisatud osakuomanike arv viimase kuupäeva (", viimane_kuupaev, ") kohta")
+  } else {
+    message("ℹ Osakuomanike andmeid ei õnnestunud laadida – jätame veeru tühjaks")
+  }
 
   message("Laaditud fondide arv: ", length(unique(fondid_info$Fond)))
-  message("ℹ Kontode arvu ajalugu ei ole saadaval - kasutatakse ainult viimase päeva andmeid")
 
   # SALVESTAME ANDMED CSV-SSE
   if(file.exists(csv_ajalugu)) {
     # Loe olemasolevad andmed
     vanad_andmed <- read_csv(csv_ajalugu, show_col_types = FALSE)
+
+    # Kui vanas failis puudub osakuomanike veerg, lisame selle
+    if(!"osakuomanikud" %in% names(vanad_andmed)) {
+      vanad_andmed <- vanad_andmed %>% mutate(osakuomanikud = NA_integer_)
+    }
 
     # Leia uued read (kuupäevad + fondid, mida ei ole veel CSV-s)
     uued_read <- fondid_info %>%
@@ -405,7 +431,7 @@ if(nrow(fondid_info) > 0) {
 
 ```{r calc_totals, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame kogusumma MAHU kohta (ainult maht, sest kontode arvu ei ole ajalooliselt)
+  # Arvutame kogusumma MAHU kohta (kontode arvu ajalugu koguneb jooksvalt)
   k6ik_koos <- fondid_info %>%
     group_by(Kuupäev) %>%
     summarize(
@@ -510,7 +536,7 @@ if(nrow(k6ik_koos) > 0 && !is.null(k6ik_koos$kontode_arv_koguturg)) {
 
 ```{r calc_market_share, include=FALSE}
 if(nrow(fondid_info) > 0) {
-  # Arvutame iga fondi turuosa MAHU järgi (kontode arvu ajalugu ei ole saadaval)
+  # Arvutame iga fondi turuosa MAHU järgi (kontode arvu ajalugu koguneb jooksvalt)
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
