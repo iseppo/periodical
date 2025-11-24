@@ -139,21 +139,22 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 csv_ajalugu <- "iii_sammas_ajalugu.csv"
 yesterday <- as.character(today() - days(1))
 
-# UUENDUS: Laeme alla olemasoleva andmebaasi veebiserverist (kui see on olemas)
+# UUENDUS: Laeme ALATI alla olemasoleva andmebaasi veebiserverist
 andmebaas_url <- "https://www.seppo.ai/tuleva/iii_sammas_ajalugu.csv"
 
-# Püüame alla laadida olemasoleva andmebaasi
-if(!file.exists(csv_ajalugu)) {
-  message("Püüan laadida alla olemasoleva andmebaasi veebiserverist...")
-  tryCatch({
-    download.file(andmebaas_url, csv_ajalugu, method = "auto", quiet = TRUE)
-    if(file.exists(csv_ajalugu) && file.size(csv_ajalugu) > 0) {
-      message("✓ Andmebaas edukalt alla laaditud veebiserverist")
-    }
-  }, error = function(e) {
-    message("ℹ Andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
-  })
-}
+# Püüame alla laadida andmebaasi (isegi kui lokaalne fail eksisteerib)
+message("Püüan laadida alla andmebaasi veebiserverist...")
+andmebaas_laaditud <- FALSE
+tryCatch({
+  download.file(andmebaas_url, csv_ajalugu, method = "auto", quiet = TRUE)
+  if(file.exists(csv_ajalugu) && file.size(csv_ajalugu) > 0) {
+    message("✓ Andmebaas edukalt alla laaditud veebiserverist")
+    andmebaas_laaditud <- TRUE
+  }
+}, error = function(e) {
+  message("ℹ Andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
+  message("  Jätkan ilma andmebaasita või kasutan lokaalselt olemasolevat faili")
+})
 
 if(file.exists(csv_ajalugu)) {
   # Kui CSV eksisteerib, laeme ainult viimased 7 päeva
