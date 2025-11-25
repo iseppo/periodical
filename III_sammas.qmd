@@ -378,6 +378,64 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
   fondid_info <- data.frame()
   message("Andmete laadimine ebaõnnestus.")
 }
+
+# SALVESTAME INVESTORITE ARVU AJALOO
+# Pensionikeskus avaldab osakuomanike arvu ainult viimase kuupäeva kohta,
+# seega ehitame ajaloo üles jooksvalt CSV faili täiendades.
+if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
+  csv_investorid_ajalugu <- "iii_sammas_investorid_ajalugu.csv"
+  investorid_andmebaas_url <- "https://www.seppo.ai/tuleva/iii_sammas_investorid_ajalugu.csv"
+
+  # Laeme ALATI alla olemasoleva andmebaasi veebiserverist
+  message("Püüan laadida alla investorite andmebaasi veebiserverist...")
+  tryCatch({
+    download.file(investorid_andmebaas_url, csv_investorid_ajalugu, method = "auto", quiet = TRUE)
+    if(file.exists(csv_investorid_ajalugu) && file.size(csv_investorid_ajalugu) > 0) {
+      message("✓ Investorite andmebaas edukalt alla laaditud veebiserverist")
+    }
+  }, error = function(e) {
+    message("ℹ Investorite andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
+    message("  Loome uue faili")
+  })
+
+  # Valmistame ette täna laaditud osakuomanike andmed
+  # Lisame tänase kuupäeva (eile, kuna andmed on eile seisuga)
+  tanamased_investorid <- raw_osakuomanikud %>%
+    mutate(
+      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
+      Fond = str_trim(Fond),
+      Kuupäev = yesterday,  # yesterday on defineeritud real 140
+      investorite_arv = as.integer(osakuomanikud)
+    ) %>%
+    select(Kuupäev, Fond, investorite_arv)
+
+  if(file.exists(csv_investorid_ajalugu)) {
+    # Kui CSV eksisteerib, loeme sisse ja lisame uued andmed
+    vanad_investorid <- read_csv(csv_investorid_ajalugu, show_col_types = FALSE)
+
+    # Kontrollime, kas täna kuupäev juba eksisteerib
+    uued_investorid <- tanamased_investorid %>%
+      anti_join(vanad_investorid, by = c("Kuupäev", "Fond"))
+
+    if(nrow(uued_investorid) > 0) {
+      # Lisa uued read ja salvesta
+      kokku_investorid <- bind_rows(vanad_investorid, uued_investorid) %>%
+        arrange(Kuupäev, Fond)
+      write_csv(kokku_investorid, csv_investorid_ajalugu)
+      message("✓ Lisatud ", nrow(uued_investorid), " uut rida investorite ajaloo faili (",
+              length(unique(uued_investorid$Fond)), " fondi)")
+    } else {
+      message("ℹ Investorite andmed juba ajakohased")
+    }
+  } else {
+    # Kui CSV ei eksisteeri, salvesta kõik andmed
+    write_csv(tanamased_investorid, csv_investorid_ajalugu)
+    message("✓ Loodud uus investorite ajaloo fail: ", csv_investorid_ajalugu,
+            " (", nrow(tanamased_investorid), " rida)")
+  }
+} else {
+  message("ℹ Investorite andmeid ei saanud laadida – investorite ajalugu ei uuenenud")
+}
 ```
 
 

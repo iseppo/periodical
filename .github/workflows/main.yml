@@ -66,6 +66,8 @@ jobs:
               [ -f iii_sammas_top_fondid.csv ] && scp ./iii_sammas_top_fondid.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
               # UUENDUS: Upload andmebaasi fail (kui eksisteerib)
               [ -f iii_sammas_ajalugu.csv ] && scp ./iii_sammas_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Andmebaas üles laaditud'
+              # Upload investorite ajaloo fail (kui eksisteerib)
+              [ -f iii_sammas_investorid_ajalugu.csv ] && scp ./iii_sammas_investorid_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Investorite ajalugu üles laaditud'
             fi
             
             # Lae üles tuleva_files kaust (kui eksisteerib) SÄILITADES struktuuri
