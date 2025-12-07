@@ -302,7 +302,7 @@ p_tasud <- fondide_tasud %>%
   geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
   scale_y_continuous(labels = scales::comma_format(decimal.mark = ",")) +
   labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga senikogutud 10 tuhande euro kohta?",
-       x = "fond", y = "jooksvad tasud (eurot)", caption = "allikas: Pensionikeskus") +
+       x = "fond", y = "jooksvad tasud (eurot aastas)", caption = "allikas: Pensionikeskus") +
   coord_flip() +
   theme_ipsum_rc()
 ```
