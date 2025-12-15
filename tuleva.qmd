@@ -245,6 +245,7 @@ p <- navid %>%
   geom_point(data = navid_end, size = 2, aes(color = Fond)) +
   theme_ipsum_rc() +
   scale_color_manual(values = colors) +
+  scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
   scale_x_date(date_labels = "%m/%Y") +
   geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
   labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
