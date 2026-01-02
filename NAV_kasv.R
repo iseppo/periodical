@@ -149,9 +149,9 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
 #' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
 #'
 #' @param start_year Algusaasta (vaikimisi 2017)
-#' @param use_cache Kas kasutada cache'i (vaikimisi TRUE)
+#' @param use_cache Kas kasutada cache'i (vaikimisi FALSE)
 #' @return Data frame inflatsiooni andmetega
-get_inflation_data <- function(start_year = 2017, use_cache = TRUE) {
+get_inflation_data <- function(start_year = 2017, use_cache = FALSE) {
   cache_file <- "cache_inflation_data.rds"
 
   # Kontrollime cache'i
@@ -168,18 +168,8 @@ get_inflation_data <- function(start_year = 2017, use_cache = TRUE) {
   query_body <- list(
     query = list(
       list(
-        code = "Aasta",
-        selection = list(
-          filter = "item",
-          values = I(start_year:year(today()))
-        )
-      ),
-      list(
         code = "Kaubagrupp",
-        selection = list(
-          filter = "item",
-          values = I(c("1"))  # Tarbijahinnaindeks
-        )
+        selection = list(filter = "item", values = I(c("1")))
       )
     ),
     response = list(format = "csv2")
@@ -679,13 +669,6 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
     url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
     query_body <- list(
       query = list(
-        list(
-          code = "Aasta",
-          selection = list(
-            filter = "item",
-            values = I(2017:year(today()))
-          )
-        ),
         list(
           code = "Kaubagrupp",
           selection = list(
