@@ -465,14 +465,10 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
 generate_static_charts <- function() {
   message("--- Alustan staatiliste graafikute genereerimist ---")
 
-  # Määrame 10-aastase limiidi
-  kihlveo_algus <- ymd("2023-08-03")
-  kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+  # Kasutame kõiki saadaolevaid andmeid
+  lopp_kp <- today()
 
-  # Piirame andmete lõppkuupäeva 10 aastaga
-  lopp_kp <- min(today(), kihlveo_lopp)
-
-  message(paste("Staatilised graafikud kuni kuupäevani:", lopp_kp, "(10-aastane limiit)"))
+  message(paste("Staatilised graafikud kuni kuupäevani:", lopp_kp))
 
   # Laeme andmed paralleelselt
   message("Laen NAV ja inflatsiooni andmeid paralleelselt...")
@@ -714,15 +710,10 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
     "sekundit"
   ))
 
-  # Määrame animatsiooni parameetrid
-  # Kihlvedu algab 2023-08-03 ja kestab 10 aastat
-  kihlveo_algus <- ymd("2023-08-03")
-  kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+  # Määrame animatsiooni parameetrid - kasutame kõiki saadaolevaid andmeid
+  lopp_kp <- max(nav_data$Kuupäev)
 
-  # Piirame animatsiooni 10 aastaga
-  lopp_kp <- min(max(nav_data$Kuupäev), kihlveo_lopp)
-
-  message(paste("Animatsioon peatub kuupäeval:", lopp_kp, "(10-aastane limiit)"))
+  message(paste("Animatsioon peatub kuupäeval:", lopp_kp))
 
   kuude_algused <- seq.Date(
     from = ymd("2018-01-01"),
