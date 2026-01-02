@@ -41,11 +41,11 @@ jobs:
             [ -d renv ] && mv renv renv.bak
 
             echo '--- Running R script ---'
-            Rscript NAV_kasv.R
+            Rscript NAV_kasv.R || echo 'NAV_kasv.R failed, continuing...'
             
             echo '--- Rendering Quarto reports ---'
-            quarto render turuylevaade.qmd
-            quarto render tuleva.qmd
+            quarto render turuylevaade.qmd || echo 'turuylevaade rendering failed, continuing...'
+            quarto render tuleva.qmd || echo 'tuleva rendering failed, continuing...'
 
             echo '--- Fetching III sammas fund list ---'
             Rscript fetch_iii_sammas_fondid.R || echo 'III sammas fund list fetch failed, continuing...'
@@ -54,27 +54,27 @@ jobs:
             quarto render III_sammas.qmd || echo 'III sammas rendering failed, continuing...'
             
             echo '--- Uploading files to server ---'
-            scp ./aastane_tulu_tuleva_lhv.png ./kihlvedu.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
+            scp ./aastane_tulu_tuleva_lhv.png ./kihlvedu.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/ || echo 'Failed to upload tuleva files to kihlveod, continuing...'
 
-            scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+            scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ || echo 'Failed to upload turuylevaade files, continuing...'
 
             # Upload III sammas files if they exist
             if [ -f III_sammas.html ]; then
               echo 'Uploading III sammas files...'
-              scp ./III_sammas.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
-              [ -f iii_sammas_koguturg.csv ] && scp ./iii_sammas_koguturg.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
-              [ -f iii_sammas_top_fondid.csv ] && scp ./iii_sammas_top_fondid.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
+              scp ./III_sammas.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ || echo 'Failed to upload III_sammas.html, continuing...'
+              [ -f iii_sammas_koguturg.csv ] && (scp ./iii_sammas_koguturg.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ || echo 'Failed to upload iii_sammas_koguturg.csv')
+              [ -f iii_sammas_top_fondid.csv ] && (scp ./iii_sammas_top_fondid.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ || echo 'Failed to upload iii_sammas_top_fondid.csv')
               # UUENDUS: Upload andmebaasi fail (kui eksisteerib)
-              [ -f iii_sammas_ajalugu.csv ] && scp ./iii_sammas_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Andmebaas üles laaditud'
+              [ -f iii_sammas_ajalugu.csv ] && (scp ./iii_sammas_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Andmebaas üles laaditud' || echo 'Failed to upload iii_sammas_ajalugu.csv')
               # Upload investorite ajaloo fail (kui eksisteerib)
-              [ -f iii_sammas_investorid_ajalugu.csv ] && scp ./iii_sammas_investorid_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Investorite ajalugu üles laaditud'
+              [ -f iii_sammas_investorid_ajalugu.csv ] && (scp ./iii_sammas_investorid_ajalugu.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/ && echo 'Investorite ajalugu üles laaditud' || echo 'Failed to upload iii_sammas_investorid_ajalugu.csv')
             fi
             
             # Lae üles tuleva_files kaust (kui eksisteerib) SÄILITADES struktuuri
             if [ -d tuleva_files ]; then
               echo 'Uploading tuleva_files directory...'
               scp -r tuleva_files \
-                virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
+                virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/ || echo 'Failed to upload tuleva_files directory, continuing...'
             fi            
             
             
