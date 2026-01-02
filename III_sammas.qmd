@@ -404,7 +404,7 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
     mutate(
       Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
       Fond = str_trim(Fond),
-      Kuupäev = yesterday,  # yesterday on defineeritud real 140
+      Kuupäev = as.Date(yesterday),  # yesterday on defineeritud real 140
       investorite_arv = as.integer(osakuomanikud)
     ) %>%
     select(Kuupäev, Fond, investorite_arv)
