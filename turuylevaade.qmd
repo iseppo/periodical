@@ -826,7 +826,7 @@ indeks_vahetus <- vahetus %>%
 indeks_vahetus <- left_join(indeks_vahetus, fondinimed)
 
 vahetus_kokku <- sum(c(vahetus$count_to_fund, vahetus$count_to_pik))
-vahetus_kokku_sum <- sum(c(vahetus$amount_from_fund, vahetus$amount_from_pik))
+vahetus_kokku_sum <- sum(c(vahetus$amount_to_fund, vahetus$amount_to_pik))
 
 indeksist_lahkunud <- sum(indeks_vahetus$count_to_fund, indeks_vahetus$count_to_pik)
 indeksist_lahkunud_sum <- sum(indeks_vahetus$amount_to_fund, indeks_vahetus$amount_to_pik)
