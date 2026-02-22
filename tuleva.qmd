@@ -210,7 +210,7 @@ FONDIDE_VARVID <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
 url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=",
               KIHLVEO_ALGUS, "&date_to=", ANDMETE_LOPP, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
-navid <- read.delim(url, fileEncoding = "UTF-16", header = TRUE)
+navid <- read.delim(url, fileEncoding = "UTF-16", header = TRUE, dec = ",")
 navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
 navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
 navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"

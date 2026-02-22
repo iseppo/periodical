@@ -187,7 +187,7 @@ fondid_investorid <- fondid_investorid %>%
 fondid_maht <- fondid_maht %>%
   rename("maht" = Maht, mahu_muutus = Muutus..)
 
-fondid_info <- full_join(fondid_maht, fondid_investorid, by = c("Kuupäev", "Fond", "Lühinimi")) %>%
+fondid_info <- full_join(fondid_maht, fondid_investorid, by = c("Kuupäev", "Lühinimi")) %>%
   select(-Fond.PIK) %>%
   mutate(Lühinimi = case_when(
     # Tuleva indeksfondid

@@ -189,7 +189,7 @@ lae_mahud <- function(from_day, yesterday) {
 
   tryCatch({
     df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
-                    check.names = FALSE, stringsAsFactors = FALSE)
+                    check.names = FALSE, stringsAsFactors = FALSE, dec = ",")
 
     if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
 
@@ -215,7 +215,7 @@ lae_koguturu_kontod <- function(from_day, yesterday) {
 
   tryCatch({
     df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
-                    check.names = FALSE, stringsAsFactors = FALSE)
+                    check.names = FALSE, stringsAsFactors = FALSE, dec = ",")
 
     if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
 
@@ -238,7 +238,7 @@ lae_osakuomanikud <- function() {
 
   tryCatch({
     df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
-                    check.names = FALSE, stringsAsFactors = FALSE)
+                    check.names = FALSE, stringsAsFactors = FALSE, dec = ",")
 
     # Leiame õiged veerud
     col_fond <- names(df)[1]  # Esimene veerg on fond
@@ -492,7 +492,7 @@ if(nrow(fondid_info) > 0) {
       ) %>%
       left_join(k6ik_koos, by = "Kuupäev") %>%
       mutate(
-        indeks_maht_protsent = if_else(maht_kokku > 0, round(100 * maht / maht_kokku, 1), 0)
+        indeks_maht_protsent = ifelse(maht_kokku > 0, round(100 * maht / maht_kokku, 1), 0)
       )
   } else {
     indeksfondid_koos <- k6ik_koos %>%
@@ -577,8 +577,8 @@ if(nrow(fondid_info) > 0) {
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_maht = if_else(sum(maht, na.rm = TRUE) > 0,
-                            round(100 * maht / sum(maht, na.rm = TRUE), 1), 0)
+      turuosa_maht = ifelse(sum(maht, na.rm = TRUE) > 0,
+                           round(100 * maht / sum(maht, na.rm = TRUE), 1), 0)
     )
 
   # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
@@ -625,8 +625,8 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
       # Eemaldame "pensionifond" sõna nimedest
       Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
       Fond = str_trim(Fond),
-      turuosa_kontod = if_else(sum(osakuomanikud, na.rm = TRUE) > 0,
-                              round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1), 0)
+      turuosa_kontod = ifelse(sum(osakuomanikud, na.rm = TRUE) > 0,
+                             round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1), 0)
     ) %>%
     arrange(desc(osakuomanikud))
 

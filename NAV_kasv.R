@@ -117,7 +117,8 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
   navid_raw <- read.delim(
     url,
     fileEncoding = "UTF-16",
-    header = TRUE
+    header = TRUE,
+    dec = ","
   )
   
   # Töötleme andmed õigesse formaati
