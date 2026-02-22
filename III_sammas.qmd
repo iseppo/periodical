@@ -577,8 +577,8 @@ if(nrow(fondid_info) > 0) {
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_maht = ifelse(sum(maht, na.rm = TRUE) > 0,
-                           round(100 * maht / sum(maht, na.rm = TRUE), 1), 0)
+      turuosa_maht = if (sum(maht, na.rm = TRUE) > 0)
+                           round(100 * maht / sum(maht, na.rm = TRUE), 1) else rep(0, n())
     )
 
   # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
@@ -625,8 +625,8 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
       # Eemaldame "pensionifond" sõna nimedest
       Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
       Fond = str_trim(Fond),
-      turuosa_kontod = ifelse(sum(osakuomanikud, na.rm = TRUE) > 0,
-                             round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1), 0)
+      turuosa_kontod = if (sum(osakuomanikud, na.rm = TRUE) > 0)
+                             round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1) else rep(0, n())
     ) %>%
     arrange(desc(osakuomanikud))
 
