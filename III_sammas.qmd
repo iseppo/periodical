@@ -45,28 +45,6 @@ library(tibble)
 ```{r config, echo=FALSE, message=FALSE, warning=FALSE}
 from_day <- "2017-05-02"
 yesterday <- as.character(today() - days(1))
-
-# Funktsioon numbrite puhastamiseks (eemaldab tühikud ja asendab koma punktiga)
-puhasta_number <- function(x) {
-  if(is.numeric(x)) return(x)
-  if(is.character(x)) {
-    # Eemaldame tühikud ja asendame koma punktiga
-    x_puhastatud <- gsub(" ", "", x, fixed = TRUE)
-    x_puhastatud <- gsub(",", ".", x_puhastatud, fixed = TRUE)
-    # Teisendame numbriks
-    return(as.numeric(x_puhastatud))
-  }
-  return(as.numeric(x))
-}
-
-# Funktsioon veeru leidmiseks mustri järgi
-leia_veerg <- function(df, muster) {
-  veerg_nimi <- grep(muster, names(df), ignore.case = TRUE, value = TRUE)
-  if(length(veerg_nimi) > 0) {
-    return(veerg_nimi[1])
-  }
-  return(NULL)
-}
 ```
 
 
@@ -137,7 +115,6 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
 ```{r lae_alla_info, message=FALSE, warning=FALSE}
 # Määrame, millisest kuupäevast alates andmeid laadida
 csv_ajalugu <- "iii_sammas_ajalugu.csv"
-yesterday <- as.character(today() - days(1))
 
 # UUENDUS: Laeme ALATI alla olemasoleva andmebaasi veebiserverist
 andmebaas_url <- "https://www.seppo.ai/tuleva/iii_sammas_ajalugu.csv"
@@ -146,10 +123,12 @@ andmebaas_url <- "https://www.seppo.ai/tuleva/iii_sammas_ajalugu.csv"
 message("Püüan laadida alla andmebaasi veebiserverist...")
 andmebaas_laaditud <- FALSE
 tryCatch({
-  download.file(andmebaas_url, csv_ajalugu, method = "auto", quiet = TRUE)
-  if(file.exists(csv_ajalugu) && file.size(csv_ajalugu) > 0) {
+  dl_status <- download.file(andmebaas_url, csv_ajalugu, method = "auto", quiet = TRUE)
+  if(dl_status == 0 && file.exists(csv_ajalugu) && file.size(csv_ajalugu) > 0) {
     message("✓ Andmebaas edukalt alla laaditud veebiserverist")
     andmebaas_laaditud <- TRUE
+  } else if(dl_status != 0) {
+    message("ℹ Allalaadimine ebaõnnestus (kood: ", dl_status, ")")
   }
 }, error = function(e) {
   message("ℹ Andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
@@ -199,10 +178,9 @@ worker_count <- max(1, available_cores - 1)
 plan(multisession, workers = worker_count)
 
 # Laeme KÕIKIDE fondide mahu korraga (kõik fond ID-d)
-lae_mahud <- function() {
-  # Kõik aktiivsed fondide ID-d (pärit veebilehe HTML-ist)
-  # f[] parameetri abil saame kõigi fondide andmed
-  all_fund_ids <- c(55, 72, 87, 53, 41, 43, 34, 90, 89, 33, 79, 42, 84, 32, 85, 81)
+lae_mahud <- function(from_day, yesterday) {
+  # Kasutame fondid tabelist fondide ID-d (dünaamiline, mitte hardcoded)
+  all_fund_ids <- fondid$id
   fund_params <- paste0("&f[]=", all_fund_ids, collapse = "")
 
   url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/?download=xls",
@@ -210,7 +188,7 @@ lae_mahud <- function() {
                 fund_params)
 
   tryCatch({
-    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+    df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
                     check.names = FALSE, stringsAsFactors = FALSE)
 
     if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
@@ -231,12 +209,12 @@ lae_mahud <- function() {
 }
 
 # Laeme KOGUTURU kontode arvu (see on juba summa üle kõikide fondide!)
-lae_koguturu_kontod <- function() {
+lae_koguturu_kontod <- function(from_day, yesterday) {
   url <- paste0("https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/?download=xls",
                 "&date_from=", from_day, "&date_to=", yesterday)
 
   tryCatch({
-    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+    df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
                     check.names = FALSE, stringsAsFactors = FALSE)
 
     if("Kuupäev" %in% names(df)) df$Kuupäev <- dmy(df$Kuupäev)
@@ -259,7 +237,7 @@ lae_osakuomanikud <- function() {
   url <- "https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-statistika/?download=xls"
 
   tryCatch({
-    df <- read.csv2(url, fileEncoding = "UTF-16LE", sep = "\t", header = TRUE,
+    df <- read.delim(url, fileEncoding = "UTF-16LE", header = TRUE,
                     check.names = FALSE, stringsAsFactors = FALSE)
 
     # Leiame õiged veerud
@@ -284,11 +262,10 @@ lae_osakuomanikud <- function() {
 }
 
 # Laeme andmed
-raw_maht <- lae_mahud()
-raw_koguturu_kontod <- lae_koguturu_kontod()
+on.exit(plan(sequential), add = TRUE)
+raw_maht <- lae_mahud(from_day, yesterday)
+raw_koguturu_kontod <- lae_koguturu_kontod(from_day, yesterday)
 raw_osakuomanikud <- lae_osakuomanikud()
-
-plan(sequential)
 
 # 3. ANDMETE ÜHENDAMINE
 if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
@@ -389,9 +366,11 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
   # Laeme ALATI alla olemasoleva andmebaasi veebiserverist
   message("Püüan laadida alla investorite andmebaasi veebiserverist...")
   tryCatch({
-    download.file(investorid_andmebaas_url, csv_investorid_ajalugu, method = "auto", quiet = TRUE)
-    if(file.exists(csv_investorid_ajalugu) && file.size(csv_investorid_ajalugu) > 0) {
+    dl_status <- download.file(investorid_andmebaas_url, csv_investorid_ajalugu, method = "auto", quiet = TRUE)
+    if(dl_status == 0 && file.exists(csv_investorid_ajalugu) && file.size(csv_investorid_ajalugu) > 0) {
       message("✓ Investorite andmebaas edukalt alla laaditud veebiserverist")
+    } else if(dl_status != 0) {
+      message("ℹ Investorite andmebaasi allalaadimine ebaõnnestus (kood: ", dl_status, ")")
     }
   }, error = function(e) {
     message("ℹ Investorite andmebaasi ei saanud alla laadida (fail võib-olla ei eksisteeri veel): ", e$message)
@@ -513,7 +492,7 @@ if(nrow(fondid_info) > 0) {
       ) %>%
       left_join(k6ik_koos, by = "Kuupäev") %>%
       mutate(
-        indeks_maht_protsent = round(100 * maht / maht_kokku, 1)
+        indeks_maht_protsent = if_else(maht_kokku > 0, round(100 * maht / maht_kokku, 1), 0)
       )
   } else {
     indeksfondid_koos <- k6ik_koos %>%
@@ -598,7 +577,8 @@ if(nrow(fondid_info) > 0) {
   fondid_turuosa <- fondid_info %>%
     group_by(Kuupäev) %>%
     mutate(
-      turuosa_maht = round(100 * maht / sum(maht, na.rm = TRUE), 1)
+      turuosa_maht = if_else(sum(maht, na.rm = TRUE) > 0,
+                            round(100 * maht / sum(maht, na.rm = TRUE), 1), 0)
     )
 
   # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
@@ -645,7 +625,8 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
       # Eemaldame "pensionifond" sõna nimedest
       Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
       Fond = str_trim(Fond),
-      turuosa_kontod = round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1)
+      turuosa_kontod = if_else(sum(osakuomanikud, na.rm = TRUE) > 0,
+                              round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1), 0)
     ) %>%
     arrange(desc(osakuomanikud))
 
@@ -758,28 +739,6 @@ if(nrow(fondid_top) > 0) {
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
-}
-```
-
-#### Kontode arv (barplot)
-
-```{r plot_accounts_barplot}
-# MÄRKUS: See on duplikaat "Kontode arv" graafikuga
-# Jätame selle sisse juhuks, kui kasutaja eelistab seda formaati
-if(nrow(kontode_turuosa_viimane) > 0) {
-  p <- kontode_turuosa_viimane %>%
-    mutate(Fond = factor(Fond, levels = Fond)) %>%
-    ggplot(aes(x = Fond, y = osakuomanikud, fill = Fond)) +
-    geom_col() +
-    theme_ft_rc() +
-    scale_fill_manual(values = colors_kontod) +
-    labs(x = "", y = "osakuomanike arv",
-         title = "Fondide osakuomanike arv (viimane päev)") +
-    theme(axis.text.x = element_text(angle = 45, hjust = 1),
-          legend.position = "none")
-  ggplotly(p)
-} else {
-  cat("Kontode arvu andmed puuduvad (ei saa ajalugu alla laadida)")
 }
 ```
 

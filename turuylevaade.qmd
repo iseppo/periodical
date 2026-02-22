@@ -52,9 +52,10 @@ yesterday <- as.character(today() - days(1))
 ```{r fondid_online}
 
 url <- "https://www.pensionikeskus.ee/ii-sammas/kohustuslikud-pensionifondid/"
-fondid_html <- read_html(url)
-
-# Assuming html_content contains your HTML string
+fondid_html <- tryCatch(
+  read_html(url),
+  error = function(e) stop("Pensionikeskus HTML ei laadnud: ", conditionMessage(e))
+)
 
 # Select all <a> elements with class "fund"
 fund_links <- fondid_html %>% html_nodes("a.fund")
@@ -62,18 +63,16 @@ fund_links <- fondid_html %>% html_nodes("a.fund")
 # Extract the 'href' attribute to get fund URLs
 fund_urls <- html_attr(fund_links, "href")
 
-# Extract the fund IDs from the URLs
-fund_ids <- sapply(fund_urls, function(url) {
-    matches <- regexpr("/fid/(\\d+)/", url)
-    ifelse(matches > 0, regmatches(url, matches), NA)
-})
-fund_ids <- gsub("/fid/(\\d+)/", "\\1", fund_ids)  # Clean up the matches to just get the IDs
+# Extract the fund IDs from the URLs (ühe sammuga, lõpu kaldkriips valikuline)
+fund_ids <- sub(".*/fid/(\\d+)/?.*", "\\1", fund_urls)
+fund_ids[!grepl("/fid/\\d+", fund_urls)] <- NA_character_
 
 # Extract the 'title' attribute for fund titles
 fund_titles <- html_attr(fund_links, "title")
 
 # Combine the IDs and titles into a data frame
-fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE)
+fund_info <- data.frame(ID = fund_ids, Title = fund_titles, stringsAsFactors = FALSE) %>%
+  filter(!is.na(ID), nchar(trimws(Title)) > 0)
 
 ```
 
@@ -119,6 +118,7 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
   available_cores <- parallel::detectCores()
   worker_count <- max(2, available_cores - 1)
   plan(multisession, workers = worker_count)
+  on.exit(plan(sequential), add = TRUE)
   fondid_investorid <- furrr::future_map_dfr(fondid$id, function(i) {
     message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
     url_investorid <- paste0(
@@ -170,7 +170,6 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
       )
     )
   })
-  plan(sequential)
 #  write_csv(fondid_investorid, "data/fondid_investorid.csv")
 #  write_csv(fondid_maht, "data/fondid_maht.csv")
 
@@ -188,7 +187,7 @@ fondid_investorid <- fondid_investorid %>%
 fondid_maht <- fondid_maht %>%
   rename("maht" = Maht, mahu_muutus = Muutus..)
 
-fondid_info <- full_join(fondid_maht, fondid_investorid) %>%
+fondid_info <- full_join(fondid_maht, fondid_investorid, by = c("Kuupäev", "Fond", "Lühinimi")) %>%
   select(-Fond.PIK) %>%
   mutate(Lühinimi = case_when(
     # Tuleva indeksfondid
@@ -285,7 +284,7 @@ tuleva_koos_volakiri <- fondid_info %>%
 
 indeksfondid_koos <- left_join(indeksfondid_koos, k6ik_koos, by = "Kuupäev") %>%
   mutate(indeks_maht_protsent = round(100*maht/maht_kokku, 1), indeks_investoreid_protsent = round(100*investoreid/investoreid_kokku, 1)) %>%
-  left_join(tuleva) %>%
+  left_join(tuleva, by = "Kuupäev") %>%
   mutate(tuleva_maht_protsent = round(100*maht_tuleva/maht_kokku, 2), tuleva_investoreid_protsent = round(100*investoreid_tuleva/investoreid_kokku, 2))
 
 ```
@@ -365,7 +364,7 @@ ggplotly(p)
 fondid_koos <- fondid_info %>%
   group_by(Kuupäev) %>%
   summarise(maht_turg = sum(maht, na.rm = TRUE), investoreid_turg = sum(`investeerijate arv`, na.rm = TRUE)) %>%
-  full_join(indeksfondid_koos) 
+  full_join(indeksfondid_koos, by = "Kuupäev")
 
 fondid_graaf <- fondid_koos %>%
   pivot_longer(cols = c(maht, maht_turg)) %>%
@@ -432,20 +431,20 @@ ggsave(p, file = "teine_sammas_kokku_indeks_vs_juhitud_maht57.png", height = 5, 
 
 ```{r}
 
-fondid_graaf <- fondid_koos %>%
+fondid_graaf_inv <- fondid_koos %>%
   mutate(akt_juh_fond = investoreid_turg - investoreid) %>%
   pivot_longer(cols = c(investoreid, akt_juh_fond)) %>%
   mutate(name = fct_recode(name, "Aktiivselt juhitud fondi kogujad" = "akt_juh_fond", "Indeksifondi kogujaid" = "investoreid")) %>%
   mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
 
-p <- fondid_graaf %>%
+p <- fondid_graaf_inv %>%
   ggplot(aes(x = Kuupäev, y = value)) +
   geom_line(aes(color = name)) +
   theme_ft_rc() +
   scale_color_ft(name = "") +
   labs(title = "Teise sambasse kogujad", x = "kuupäev", y = "inimesi") +
-  geom_point(data = filter(fondid_graaf, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(fondid_graaf, Kuupäev == max(Kuupäev)), aes(label = value_label), nudge_y = 30000, color = "orange") +
+  geom_point(data = filter(fondid_graaf_inv, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
+  geom_text(data = filter(fondid_graaf_inv, Kuupäev == max(Kuupäev)), aes(label = value_label), nudge_y = 30000, color = "orange") +
   geom_blank(aes(x = max(Kuupäev) + 100, y = min(0)))
 
 ggsave(p, file = "teine_sammas_kokku_indeks.png", height = 5, width =7, scale = 1, bg = "black")
@@ -464,7 +463,7 @@ graafikule <- fondid_koos %>%
 
 graafikule2 <- tuleva_koos_volakiri %>%
   rename(maht_tuleva_vk = maht_tuleva, investoreid_tuleva_vk = investoreid_tuleva) %>%
-  full_join(graafikule) %>%
+  full_join(graafikule, by = "Kuupäev") %>%
   mutate("maht_tuleva_osakaal" = maht_tuleva_vk/maht_turg*100, maht_tuleva_investoreid = investoreid_tuleva_vk/investoreid_turg*100) %>%
   select(-name, -value) %>%
   pivot_longer(cols = c(maht_tuleva_osakaal, maht_tuleva_investoreid)) %>%
@@ -635,13 +634,13 @@ make_change_plot <- function(data, months_back, var){
   if(var == "maht") {
     kuuinfo_graaf <- kuuinfo %>%
       mutate(muutus = round((täna - eelmine_kuu)/1000000, 1),
-             muutus_pc = round(100 * muutus * 1000000 / eelmine_kuu))
+             muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus * 1000000 / eelmine_kuu), NA_real_))
     x_label <- "muutus (milj. eurot)"
     title_prefix <- "Maht: "
   } else {
     kuuinfo_graaf <- kuuinfo %>%
       mutate(muutus = täna - eelmine_kuu,
-             muutus_pc = round(100 * muutus / eelmine_kuu, 1))
+             muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus / eelmine_kuu, 1), NA_real_))
     x_label <- "muutus"
     title_prefix <- "Investorite arv: "
   }
@@ -782,7 +781,10 @@ ggplotly(p)
 ```{r}
 
 now_unix <- as.numeric(Sys.time())
-data <- fromJSON(paste0("https://www.pensionikeskus.ee/ws/et/stats/fund-pev?=", now_unix))
+data <- tryCatch(
+  fromJSON(paste0("https://www.pensionikeskus.ee/ws/et/stats/fund-pev?=", now_unix)),
+  error = function(e) stop("Pensionikeskus vahetuste JSON ei laadnud: ", conditionMessage(e))
+)
 period_end <- data$period_info$end
 
 fundnames <- t(data$funds) %>%
@@ -790,7 +792,9 @@ fundnames <- t(data$funds) %>%
 
 get_fundname <- function(name){
   if(str_length(name) < 12) return(paste0("PIK: ", name))
-  return(fundnames[name][[1]][[1]]$name)
+  entry <- fundnames[[name]]
+  if(is.null(entry)) return(paste0("Tundmatu: ", name))
+  return(entry[[1]]$name)
 }
 
 vahetus <- as.data.frame(t(as.data.frame(data$stats))) %>%
@@ -806,12 +810,10 @@ fondinimed <- fondid_info %>%
   select(fond = Fond, lühinimi = Lühinimi) %>%
   unique()
 
-cols <- names(vahetus)
-cols <- cols[cols != "fond"]
 vahetus <- vahetus %>%
   select(fond, count_to_fund, count_to_pik, count_from_fund, count_from_pik, amount_to_fund, amount_to_pik, amount_from_fund, amount_from_pik) %>%
   mutate(across(c(everything(), -fond), as.numeric)) %>%
-  mutate(count_to_fund = count_to_fund + count_to_pik, count_from_fund = count_from_fund + count_from_pik, 
+  mutate(count_to_fund = count_to_fund + count_to_pik, count_from_fund = count_from_fund + count_from_pik,
          amount_to_fund = amount_to_fund + amount_to_pik, amount_from_fund = amount_from_fund + amount_from_pik)
 
 fondid_indeks <- fondid %>%
@@ -823,27 +825,29 @@ vahetus_tuleva <- vahetus %>%
 indeks_vahetus <- vahetus %>%
   filter(fond %in% fondid_indeks$fond)
 
-indeks_vahetus <- left_join(indeks_vahetus, fondinimed)
+indeks_vahetus <- left_join(indeks_vahetus, fondinimed, by = "fond")
 
-vahetus_kokku <- sum(c(vahetus$count_to_fund, vahetus$count_to_pik))
-vahetus_kokku_sum <- sum(c(vahetus$amount_from_fund, vahetus$amount_from_pik))
+# NB: count_to_fund sisaldab juba count_to_pik (liideti ülalpool),
+# seega ei tohi neid uuesti kokku liita
+vahetus_kokku <- sum(vahetus$count_to_fund)
+vahetus_kokku_sum <- sum(vahetus$amount_from_fund)
 
-indeksist_lahkunud <- sum(indeks_vahetus$count_to_fund, indeks_vahetus$count_to_pik)
-indeksist_lahkunud_sum <- sum(indeks_vahetus$amount_to_fund, indeks_vahetus$amount_to_pik)
+indeksist_lahkunud <- sum(indeks_vahetus$count_to_fund)
+indeksist_lahkunud_sum <- sum(indeks_vahetus$amount_to_fund)
 
-indeksisse_lisandunud <- sum(indeks_vahetus$count_from_fund, indeks_vahetus$count_from_pik)
-indeksisse_lisandunud_sum <- sum(indeks_vahetus$amount_from_fund, indeks_vahetus$amount_from_pik)
+indeksisse_lisandunud <- sum(indeks_vahetus$count_from_fund)
+indeksisse_lisandunud_sum <- sum(indeks_vahetus$amount_from_fund)
 
 
 ```
 
 # Vahetuste statistika (`r period_end`)
 
-Kokku vahetas fondi **`r format(vahetus_kokku, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(vahetus_kokku_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r round(vahetus_kokku_sum/vahetus_kokku)`€**).
+Kokku vahetas fondi **`r format(vahetus_kokku, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(vahetus_kokku_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(vahetus_kokku > 0) round(vahetus_kokku_sum/vahetus_kokku) else 0`€**).
 
-Indeksfondidest lahkus **`r format(indeksist_lahkunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksist_lahkunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r format(round(indeksist_lahkunud_sum/indeksist_lahkunud), big.mark = " ", decimal.mark = ",")`€**). 
+Indeksfondidest lahkus **`r format(indeksist_lahkunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksist_lahkunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(indeksist_lahkunud > 0) format(round(indeksist_lahkunud_sum/indeksist_lahkunud), big.mark = " ", decimal.mark = ",") else "0"`€**).
 
-Indeksfondidesse lisandus **`r format(indeksisse_lisandunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksisse_lisandunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r format(round(indeksisse_lisandunud_sum/indeksisse_lisandunud), big.mark = " ", decimal.mark = ",")`€**).
+Indeksfondidesse lisandus **`r format(indeksisse_lisandunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksisse_lisandunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(indeksisse_lisandunud > 0) format(round(indeksisse_lisandunud_sum/indeksisse_lisandunud), big.mark = " ", decimal.mark = ",") else "0"`€**).
 
 *NB! Osad indeksfondidest lahkujad või lisandujad võisid minna teise indeksfondi või tulla sealt.*
 
@@ -905,9 +909,9 @@ p
 
 ```{r}
 graafikule <- indeks_vahetus %>%
-  mutate(huvitav = round(amount_from_fund/count_from_fund)) %>%
+  mutate(huvitav = if_else(count_from_fund > 0, round(amount_from_fund/count_from_fund), 0L)) %>%
   mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
-  mutate(label = paste0(huvitav, "€")) 
+  mutate(label = paste0(huvitav, "€"))
 
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +
@@ -975,9 +979,9 @@ p
 
 ```{r}
 graafikule <- indeks_vahetus %>%
-  mutate(huvitav = round(amount_to_fund/count_to_fund)) %>%
+  mutate(huvitav = if_else(count_to_fund > 0, round(amount_to_fund/count_to_fund), 0L)) %>%
   mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
-  mutate(label = paste0(huvitav, "€")) 
+  mutate(label = paste0(huvitav, "€"))
 
 p <- graafikule %>%
   ggplot(aes(x = huvitav, y = fond)) +

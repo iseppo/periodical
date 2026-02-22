@@ -114,11 +114,10 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
   url <- paste0(base_url, "?", paste0(names(params), "=", params, collapse = "&"))
   
   # Loeme andmed
-  navid_raw <- read.csv2(
-    url, 
-    fileEncoding = "UTF-16", 
-    header = TRUE, 
-    sep = "\t"
+  navid_raw <- read.delim(
+    url,
+    fileEncoding = "UTF-16",
+    header = TRUE
   )
   
   # Töötleme andmed õigesse formaati
@@ -150,12 +149,13 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
 #'
 #' @param start_year Algusaasta (vaikimisi 2017)
 #' @param use_cache Kas kasutada cache'i (vaikimisi FALSE)
+#' @param raw Kui TRUE, tagastab toorandmed (date, indeks veerud) animatsiooni jaoks
 #' @return Data frame inflatsiooni andmetega
-get_inflation_data <- function(start_year = 2017, use_cache = FALSE) {
+get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE) {
   cache_file <- "cache_inflation_data.rds"
 
-  # Kontrollime cache'i
-  if (use_cache && is_cache_valid(cache_file)) {
+  # Kontrollime cache'i (ainult töödeldud andmete jaoks)
+  if (use_cache && !raw && is_cache_valid(cache_file)) {
     message("Laen inflatsiooni andmeid cache'ist (optimeerimine)...")
     return(readRDS(cache_file))
   }
@@ -163,7 +163,7 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE) {
   message("Laen inflatsiooni andmeid Statistikaametist...")
 
   url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
-  
+
   # Koostame päringu
   query_body <- list(
     query = list(
@@ -174,17 +174,17 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE) {
     ),
     response = list(format = "csv2")
   )
-  
+
   # Teeme päringu
   response <- POST(
     url,
     body = toJSON(query_body, auto_unbox = TRUE),
     add_headers("Content-Type" = "application/json")
   )
-  
+
   # Loeme vastuse
   csv_data <- content(response, "text", encoding = "UTF-8")
-  
+
   # Töötleme andmed
   df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
     rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
@@ -198,12 +198,17 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE) {
       date > dmy("01-03-2017"),
       !is.na(indeks)
     )
-  
+
+  # Kui soovitakse toorandmeid (animatsiooni jaoks), tagastame siit
+  if (raw) {
+    return(df)
+  }
+
   # Arvutame inflatsiooni protsendi
-  last_infl <- df %>% 
-    filter(date == max(date)) %>% 
+  last_infl <- df %>%
+    filter(date == max(date)) %>%
     pull(indeks)
-  
+
   inflation <- df %>%
     mutate(
       indeks = (last_infl / indeks - 1) * 100
@@ -415,7 +420,7 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
     ) %>%
     # Lisame protsendi märgid
     mutate(
-      value_pc = paste0(100 * value, "%")
+      value_pc = paste0(format(round(100 * value, 1), nsmall = 1), "%")
     ) %>%
     # Joonistame graafiku
     ggplot(aes(x = aasta, y = value, fill = name)) +
@@ -590,7 +595,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     theme_ipsum_rc(base_size = 24) +
     scale_y_continuous(
       labels = scales::percent_format(decimal.mark = ","),
-      limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) * 1/100)
+      limits = c(NA, max(animeeritud_andmed_final$value, na.rm = TRUE) / 100 * 1.15)
     ) +
     theme(
       legend.position = "top",
@@ -630,7 +635,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
   
   message("Lisame 10-sekundilise lõpufiltri: ", mp4_input, " -> ", mp4_output)
   # Lisame 10 sekundit lõppu (optimeeritud kiirema kodeerimisega)
-  system(paste(
+  exit_code <- system(paste(
     "ffmpeg",
     "-y",
     "-i", shQuote(mp4_input),
@@ -641,9 +646,13 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     "-c:a copy",
     shQuote(mp4_output)
   ))
-  
-  # Kustutame vahefaili
-  file.remove(mp4_input)
+
+  if (exit_code != 0) {
+    warning("ffmpeg ebaõnnestus (kood: ", exit_code, "). Vahefail säilitatud: ", mp4_input)
+  } else {
+    # Kustutame vahefaili ainult eduka kodeerimise korral
+    file.remove(mp4_input)
+  }
 } 
 
 #' Genereerib kõik animatsioonid
@@ -657,48 +666,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
   load_start <- Sys.time()
 
   nav_future <- future({ get_nav_data() })
-  inflation_future <- future({
-    # Inflatsiooni andmete laadimine animatsiooni jaoks
-    # (vajame toorandmeid, mitte töödeldud)
-    message("Animatsioon: Laen inflatsiooni andmeid...")
-
-    url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
-    query_body <- list(
-      query = list(
-        list(
-          code = "Kaubagrupp",
-          selection = list(
-            filter = "item",
-            values = I(c("1"))
-          )
-        )
-      ),
-      response = list(format = "csv2")
-    )
-
-    response <- POST(
-      url,
-      body = toJSON(query_body, auto_unbox = TRUE),
-      add_headers("Content-Type" = "application/json")
-    )
-
-    csv_data <- content(response, "text", encoding = "UTF-8")
-
-    df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
-      rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
-      mutate(
-        indeks = as.numeric(indeks),
-        kuu = as.integer(MONTH_LOOKUP[Kuu]),
-        date = as.Date(paste(Aasta, kuu, "01", sep = "-"))
-      ) %>%
-      arrange(date) %>%
-      filter(
-        date > dmy("01-03-2017"),
-        !is.na(indeks)
-      )
-
-    return(df)
-  })
+  inflation_future <- future({ get_inflation_data(raw = TRUE) })
 
   nav_data <- value(nav_future)
   inflation_data_raw <- value(inflation_future)
@@ -720,7 +688,7 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
     to = lopp_kp,
     by = "1 month"
   )
-  kaadrite_kuupaevad <- union(kuude_algused, lopp_kp)
+  kaadrite_kuupaevad <- sort(unique(c(kuude_algused, lopp_kp)))
   
   message("Eelarvutan kuukeskmisi NAV väärtusi ...")
   cache_start <- Sys.time()
@@ -818,18 +786,21 @@ generate_all_animations <- function(create_tuleva_only_version = FALSE) {
 #-------------------------------------------------------------------------------
 
 #' Kontrollib, kas animatsioon vajab uuendamist
-#' 
+#'
 #' @param filepath Animatsiooni faili asukoht
 #' @return TRUE kui vajab uuendamist, FALSE muul juhul
 should_update_animation <- function(filepath) {
-  return(TRUE)
+  if (!file.exists(filepath)) return(TRUE)
+  age_days <- as.numeric(difftime(Sys.time(), file.info(filepath)$mtime, units = "days"))
+  return(age_days > 1)
 }
 
 #' Peamine käivitamise funktsioon
 #' 
 #' @param generate_tuleva_version_arg Kas genereerida ka Tuleva versioon
 main <- function(generate_tuleva_version_arg = TRUE) {
-  
+  on.exit(plan(sequential), add = TRUE)
+
   total_start <- Sys.time()
   
   # Kontrollime käsurea argumente
@@ -876,8 +847,4 @@ main <- function(generate_tuleva_version_arg = TRUE) {
 # source("pensionifondide_analyys.R")
 
 # Käivitame põhiprogrammi
-main() # Tavalise versiooni jaoks
-# main(generate_tuleva_version_arg = TRUE) # Mõlema versiooni jaoks
-
-# Lõpetamisel sulgeme paralleliseerimise
-on.exit(plan(sequential))
+main()

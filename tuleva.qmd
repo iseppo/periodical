@@ -198,30 +198,33 @@ hrbrthemes::import_roboto_condensed()
 ```
 
 ```{r}
-# Määrame 10-aastase limiidi
-kihlveo_algus <- ymd("2023-08-03")
-kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+# Kihlveo konstandid (defineeritud ühes kohas)
+KIHLVEO_ALGUS <- ymd("2023-08-03")
+KIHLVEO_LOPP  <- KIHLVEO_ALGUS + years(10)  # 2033-08-03
+ANDMETE_LOPP  <- min(today(), KIHLVEO_LOPP)
 
-# Piirame andmete lõppkuupäeva 10 aastaga
-date_to <- min(today(), kihlveo_lopp)
+# Fondide värvid (defineeritud ühes kohas)
+FONDIDE_VARVID <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
+                     "Tuleva Maailma Aktsiad" = "#00aeea")
 
-url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=2023-08-03&date_to=", date_to, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
+url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=",
+              KIHLVEO_ALGUS, "&date_to=", ANDMETE_LOPP, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
-navid <- read.csv2(url, fileEncoding ="UTF-16", header = TRUE, sep = "\t")
+navid <- read.delim(url, fileEncoding = "UTF-16", header = TRUE)
 navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
 navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
 navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
 navid <- navid %>%
+  mutate(Kuupäev = dmy(Kuupäev)) %>%
   group_by(Fond, Lühinimi) %>%
-  mutate(NAV = NAV/NAV[1]) %>%
-  ungroup() %>%
-  mutate(Kuupäev = dmy(Kuupäev))
+  arrange(Kuupäev, .by_group = TRUE) %>%
+  mutate(NAV = if_else(first(NAV) != 0, NAV / first(NAV), NA_real_)) %>%
+  ungroup()
 
 navid_end <- navid %>%
   filter(Kuupäev == max(Kuupäev))
 
-
-juhtimas <- navid_end |>
+juhtimas <- navid_end %>%
   arrange(desc(NAV)) %>%
   slice(1)
 
@@ -234,22 +237,21 @@ navid_end <- navid_end %>%
 navid <- navid %>%
   mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
 
-colors = c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
-           "Tuleva Maailma Aktsiad" = "#00aeea")
+padding_date <- max_kp + days(60)
 
 p <- navid %>%
   ggplot(aes(x = Kuupäev, y = NAV)) +
   geom_line(aes(color = Fond)) +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
-  geom_blank(aes(x = dmy("01-02-2024"), y = 0.9)) +
+  geom_blank(aes(x = padding_date, y = 0.9)) +
   geom_point(data = navid_end, size = 2, aes(color = Fond)) +
   theme_ipsum_rc() +
-  scale_color_manual(values = colors) +
+  scale_color_manual(values = FONDIDE_VARVID) +
   scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
   scale_x_date(date_labels = "%m/%Y") +
   geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
-  labs(title = "Kuidas läheb fondidel?", subtitle = "Kui palju on väärt fondi 03.08.2023\nsissepandud euro nüüd?",
-       y = "03.08.2023 sissepandud euro väärtus", caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
+  labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
+       y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
 
 ```
@@ -260,23 +262,38 @@ ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
 # URL
 url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-paevastatistika/?is_async=1"
 
-# Loeb sisse otse tabeli HTML-i
-leht <- read_html(url)
+# Loeb sisse otse tabeli HTML-i (veakäsitlusega)
+fondide_tasud <- tryCatch({
+  leht <- read_html(url)
 
-fondide_tasud <- leht %>%
-  html_element("table") %>%
-  html_table() %>%
-  clean_names() %>%
-  mutate(
-    # 1. Eemaldame %-märgi ja asendame koma punktiga
-    jooksvad_tasud = as.numeric(str_replace(str_remove(tasud, "%"), ",", "."))
-  ) %>%
-  # Valime ainult vajalikud veerud
-  select(fond, jooksvad_tasud) %>%
-  # Filtreerime välja kihlveos osalevad fondid
-  filter(
-    str_detect(fond, "Tuleva Maailma Aktsiate Pensionifond|LHV Pensionifond Ettevõtlik|SEB pensionifond 18\\+")
-  )
+  tabel <- leht %>%
+    html_element("table") %>%
+    html_table() %>%
+    clean_names()
+
+  # Kontrollime, kas 'tasud' veerg eksisteerib
+  if (!"tasud" %in% names(tabel)) {
+    # Proovime leida sarnane veerg
+    tasud_veerg <- grep("tasu", names(tabel), ignore.case = TRUE, value = TRUE)
+    if (length(tasud_veerg) > 0) {
+      names(tabel)[names(tabel) == tasud_veerg[1]] <- "tasud"
+    } else {
+      stop("Veergu 'tasud' ei leitud tabelis")
+    }
+  }
+
+  tabel %>%
+    mutate(
+      jooksvad_tasud = as.numeric(str_replace(str_remove(tasud, "%"), ",", "."))
+    ) %>%
+    select(fond, jooksvad_tasud) %>%
+    filter(
+      str_detect(fond, "Tuleva Maailma Aktsiate Pensionifond|LHV Pensionifond Ettevõtlik|SEB pensionifond 18\\+")
+    )
+}, error = function(e) {
+  message("Fondide tasude lugemine ebaõnnestus: ", e$message)
+  data.frame(fond = character(), jooksvad_tasud = numeric())
+})
 
 # Muudame fondi nimed lühemaks
 fondide_tasud <- fondide_tasud %>%
@@ -289,17 +306,14 @@ fondide_tasud <- fondide_tasud %>%
 
 # Visualiseerime, kui palju maksad iga 10 tuhande euro kohta jooksvaid tasusid aastas
 
-fondide_tasud <- fondide_tasud |>
+fondide_tasud <- fondide_tasud %>%
   mutate(jooksvad_tasud_10k = jooksvad_tasud / 100) %>%
   mutate(jooksvad_tasud_10k = jooksvad_tasud_10k * 10000)
-
-colors <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
-           "Tuleva Maailma Aktsiad" = "#00aeea")
 
 p_tasud <- fondide_tasud %>%
   ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
   geom_col(aes(fill = fond), show.legend = FALSE) +
-  scale_fill_manual(values = colors) +
+  scale_fill_manual(values = FONDIDE_VARVID) +
   geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
   scale_y_continuous(labels = scales::comma_format(decimal.mark = ",")) +
   labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga senikogutud 10 tuhande euro kohta?",
@@ -311,50 +325,73 @@ p_tasud <- fondide_tasud %>%
 
 
 ```{r include=FALSE}
-# Määrame 10-aastase limiidi
-kihlveo_algus <- ymd("2023-08-03")
-kihlveo_lopp <- kihlveo_algus + years(10)  # 2033-08-03
+# Yahoo Finance'i andmete allalaadimine (kasutame tsentraalseid konstante)
+sp500_ok <- tryCatch({
+  getSymbols("^SP500TR", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP)
+  TRUE
+}, error = function(e) {
+  message("S&P 500 TR andmete allalaadimine ebaõnnestus: ", e$message)
+  FALSE
+})
 
-# Piirame andmete lõppkuupäeva 10 aastaga
-lopp_kp <- min(today(), kihlveo_lopp)
+eur_usd_ok <- tryCatch({
+  getSymbols("EURUSD=X", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP)
+  TRUE
+}, error = function(e) {
+  message("EUR/USD andmete allalaadimine ebaõnnestus: ", e$message)
+  FALSE
+})
 
-# Download VUAA data (piiratud 10 aastaga)
-getSymbols("^SP500TR", src = "yahoo", from = "2023-08-03", to = lopp_kp)
-sp500_tr <- Cl(`SP500TR`)
-
-# Download EUR/USD exchange rate data (piiratud 10 aastaga)
-getSymbols("EURUSD=X", src = "yahoo", from = "2023-08-03", to = lopp_kp)
-eur_usd <- Cl(`EURUSD=X`)
+yahoo_ok <- sp500_ok && eur_usd_ok
+if (yahoo_ok) {
+  sp500_tr <- Cl(`SP500TR`)
+  eur_usd <- Cl(`EURUSD=X`)
+}
 ```
 
 
 ```{r}
-#eur_usd <- na.approx(eur_usd)
-# Convert S&P 500 Total Return Index to EUR
-sp500_tr_eur <- sp500_tr / eur_usd
+if (yahoo_ok) {
+  # Kaitseme nulliga jagamise ja Inf/NA eest
+  eur_usd_clean <- eur_usd
+  eur_usd_clean[eur_usd_clean == 0] <- NA
 
-# Handle missing values
-sp500_tr_eur <- na.approx(sp500_tr_eur)
+  # Teisendame S&P 500 Total Return EUR-idesse
+  sp500_tr_eur <- sp500_tr / eur_usd_clean
+  sp500_tr_eur <- na.approx(sp500_tr_eur, na.rm = FALSE)
+  sp500_tr_eur <- na.omit(sp500_tr_eur)
 
+  sp500_tr_eur_df <- data.frame(
+    Date = index(sp500_tr_eur),
+    SP500TR.Close = coredata(sp500_tr_eur)
+  )
 
-sp500_tr_eur_df <- data.frame(
-  Date = index(sp500_tr_eur),
-  SP500TR.Close = coredata(sp500_tr_eur)
-) %>%
-  mutate(SP500TR.Close = SP500TR.Close / SP500TR.Close[1] * 1000)
+  # Kaitseme esimese väärtusega jagamise eest
+  if (nrow(sp500_tr_eur_df) > 0 && sp500_tr_eur_df$SP500TR.Close[1] != 0) {
+    sp500_tr_eur_df <- sp500_tr_eur_df %>%
+      mutate(SP500TR.Close = SP500TR.Close / SP500TR.Close[1] * 1000)
+  }
 
-sp500_lastvalue <- sp500_tr_eur_df %>%
-  filter(Date == max(Date))
+  sp500_lastvalue <- sp500_tr_eur_df %>%
+    filter(Date == max(Date))
 
-max_date <- max(sp500_lastvalue$Date)
-p_summa <- sp500_tr_eur_df %>%
-  ggplot(aes(x = Date, y = SP500TR.Close)) +
-  geom_line() +
-  geom_point(data = sp500_lastvalue, size = 2) +
-  geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
-  scale_x_date(date_labels = "%m/%Y") +
-  theme_ipsum_rc() +
-  labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+  max_date <- max(sp500_lastvalue$Date)
+  p_summa <- sp500_tr_eur_df %>%
+    ggplot(aes(x = Date, y = SP500TR.Close)) +
+    geom_line() +
+    geom_point(data = sp500_lastvalue, size = 2) +
+    geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
+    scale_x_date(date_labels = "%m/%Y") +
+    theme_ipsum_rc() +
+    labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+} else {
+  # Loome tühja graafiku, kui Yahoo andmed pole kättesaadavad
+  sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)
+  max_date <- ANDMETE_LOPP
+  p_summa <- ggplot() +
+    annotate("text", x = 0.5, y = 0.5, label = "Yahoo Finance andmed pole kättesaadavad") +
+    theme_void()
+}
 ```
 
 
