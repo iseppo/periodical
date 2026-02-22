@@ -218,7 +218,7 @@ navid <- navid %>%
   mutate(Kuupäev = dmy(Kuupäev)) %>%
   group_by(Fond, Lühinimi) %>%
   arrange(Kuupäev, .by_group = TRUE) %>%
-  mutate(NAV = if_else(first(NAV) != 0, NAV / first(NAV), NA_real_)) %>%
+  mutate(NAV = ifelse(first(NAV) != 0, NAV / first(NAV), NA_real_)) %>%
   ungroup()
 
 navid_end <- navid %>%
