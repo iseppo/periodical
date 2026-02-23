@@ -163,7 +163,7 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
 
   message("Laen inflatsiooni andmeid Statistikaametist...")
 
-  url <- "https://andmed.stat.ee/api/v1/et/stat/IA02"
+  url <- "https://andmed.stat.ee/api/v1/et/stat/IA002"
 
   # Koostame päringu
   query_body <- list(
@@ -188,7 +188,7 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
 
   # Töötleme andmed
   df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
-    rename(indeks = `IA02: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
+    rename(indeks = `IA002: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
     mutate(
       indeks = as.numeric(indeks),
       kuu = as.integer(MONTH_LOOKUP[Kuu]),

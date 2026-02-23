@@ -67,7 +67,7 @@ All `.qmd` files share common structure:
 | Source | URL | Data |
 |--------|-----|------|
 | Pensionikeskus | pensionikeskus.ee | Fund NAV, investor counts, fund sizes |
-| Statistikaamet | andmed.stat.ee/api/v1/et/stat/IA02 | Consumer Price Index (inflation) |
+| Statistikaamet | andmed.stat.ee/api/v1/et/stat/IA002 | Consumer Price Index (inflation) |
 | Yahoo Finance | (via quantmod) | S&P 500, EUR/USD exchange rate |
 
 ### Fund IDs
