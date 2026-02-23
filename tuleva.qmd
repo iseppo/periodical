@@ -182,12 +182,9 @@ library(dplyr)
 library(tidyr)
 library(forcats)
 library(ggplot2)
-library(readr)
 library(stringr)
 library(lubridate)
 library(hrbrthemes)
-library(tidyquant)
-library(tseries)
 library(xts)
 library(quantmod)
 library(rvest)
@@ -210,10 +207,28 @@ FONDIDE_VARVID <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
 url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=",
               KIHLVEO_ALGUS, "&date_to=", ANDMETE_LOPP, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
-navid <- read.delim(url, fileEncoding = "UTF-16", header = TRUE, dec = ",")
+navid <- tryCatch({
+  raw <- read.delim(url, fileEncoding = "UTF-16", header = TRUE, dec = ",")
+  if (nrow(raw) == 0) stop("Tühi vastus Pensionikeskusest")
+  raw
+}, error = function(e) {
+  message("NAV andmete laadimine ebaõnnestus: ", e$message)
+  data.frame(Fond = character(), Kuupäev = character(),
+             NAV = numeric(), Lühinimi = character())
+})
+
+# Fondi nimede lühendamine
 navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
 navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
 navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
+
+# Kontrollime, kas kõik oodatud fondid on olemas
+oodatud_fondid <- c("Tuleva Maailma Aktsiad", "SEB 18+", "LHV Ettevõtlik")
+puuduvad <- setdiff(oodatud_fondid, unique(navid$Fond))
+if (length(puuduvad) > 0) {
+  warning("Puuduvad fondid pärast ümbernimetamist: ", paste(puuduvad, collapse = ", "),
+          "\nOlemasolevad fondid: ", paste(unique(navid$Fond), collapse = ", "))
+}
 navid <- navid %>%
   mutate(Kuupäev = dmy(Kuupäev)) %>%
   group_by(Fond, Lühinimi) %>%
@@ -307,19 +322,25 @@ fondide_tasud <- fondide_tasud %>%
 # Visualiseerime, kui palju maksad iga 10 tuhande euro kohta jooksvaid tasusid aastas
 
 fondide_tasud <- fondide_tasud %>%
-  mutate(jooksvad_tasud_10k = jooksvad_tasud / 100) %>%
-  mutate(jooksvad_tasud_10k = jooksvad_tasud_10k * 10000)
+  mutate(jooksvad_tasud_10k = jooksvad_tasud * 100)  # % * 10000€
 
-p_tasud <- fondide_tasud %>%
-  ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
-  geom_col(aes(fill = fond), show.legend = FALSE) +
-  scale_fill_manual(values = FONDIDE_VARVID) +
-  geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
-  scale_y_continuous(labels = scales::comma_format(decimal.mark = ",")) +
-  labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga senikogutud 10 tuhande euro kohta?",
-       x = "fond", y = "jooksvad tasud (eurot aastas)", caption = "allikas: Pensionikeskus") +
-  coord_flip() +
-  theme_ipsum_rc()
+if (nrow(fondide_tasud) > 0) {
+  p_tasud <- fondide_tasud %>%
+    ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
+    geom_col(aes(fill = fond), show.legend = FALSE) +
+    scale_fill_manual(values = FONDIDE_VARVID) +
+    geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
+    scale_y_continuous(labels = scales::comma_format(decimal.mark = ",")) +
+    labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga senikogutud 10 tuhande euro kohta?",
+         x = "fond", y = "jooksvad tasud (eurot aastas)", caption = "allikas: Pensionikeskus") +
+    coord_flip() +
+    theme_ipsum_rc()
+} else {
+  p_tasud <- ggplot() +
+    annotate("text", x = 0.5, y = 0.5,
+             label = "Fondide tasude andmed pole kättesaadavad") +
+    theme_void()
+}
 ```
 
 
@@ -327,7 +348,7 @@ p_tasud <- fondide_tasud %>%
 ```{r include=FALSE}
 # Yahoo Finance'i andmete allalaadimine (kasutame tsentraalseid konstante)
 sp500_ok <- tryCatch({
-  getSymbols("^SP500TR", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP)
+  sp500_raw <- getSymbols("^SP500TR", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP, auto.assign = FALSE)
   TRUE
 }, error = function(e) {
   message("S&P 500 TR andmete allalaadimine ebaõnnestus: ", e$message)
@@ -335,7 +356,7 @@ sp500_ok <- tryCatch({
 })
 
 eur_usd_ok <- tryCatch({
-  getSymbols("EURUSD=X", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP)
+  eur_usd_raw <- getSymbols("EURUSD=X", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP, auto.assign = FALSE)
   TRUE
 }, error = function(e) {
   message("EUR/USD andmete allalaadimine ebaõnnestus: ", e$message)
@@ -344,8 +365,8 @@ eur_usd_ok <- tryCatch({
 
 yahoo_ok <- sp500_ok && eur_usd_ok
 if (yahoo_ok) {
-  sp500_tr <- Cl(`SP500TR`)
-  eur_usd <- Cl(`EURUSD=X`)
+  sp500_tr <- Cl(sp500_raw)
+  eur_usd <- Cl(eur_usd_raw)
 }
 ```
 
@@ -408,11 +429,11 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 
 ::: {.stats-grid}
 ::: {.stat-card}
-<span class="stat-number">**`r as.numeric(Sys.Date() - as.Date("2023-08-03"))`**</span>
+<span class="stat-number">**`r as.numeric(Sys.Date() - KIHLVEO_ALGUS)`**</span>
 <span class="stat-label">päeva möödunud</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">**`r round(pmax(0, 10 - (as.numeric(Sys.Date() - as.Date("2023-08-03")) / 365.25)), 1)`**</span>
+<span class="stat-number">**`r round(pmax(0, 10 - (as.numeric(Sys.Date() - KIHLVEO_ALGUS) / 365.25)), 1)`**</span>
 <span class="stat-label">aastat jäänud</span>
 :::
 ::: {.stat-card}
