@@ -36,15 +36,42 @@ library(hrbrthemes)
 library(plotly)
 library(jsonlite)
 library(rvest)
-library(furrr)
-library(future)
-library(parallel)
 library(tibble)
 ```
 
 ```{r config, echo=FALSE, message=FALSE, warning=FALSE}
 from_day <- "2017-05-02"
 yesterday <- as.character(today() - days(1))
+options(scipen = 999)
+
+# Baasvärvid graafikutele (ühtne palett kogu dokumendis)
+BAASVÄRVID <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
+                "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
+
+# Omistab värvid fondide nimedele
+omista_varvid <- function(nimed) {
+  n <- length(nimed)
+  värvid <- rep(BAASVÄRVID, ceiling(n / length(BAASVÄRVID)))[1:n]
+  names(värvid) <- nimed
+  värvid
+}
+
+# Eemaldab "pensionifond" sõna ja puhastab tühikud
+puhasta_fondinimi <- function(nimi) {
+  str_trim(str_replace_all(nimi, regex("pensionifond", ignore_case = TRUE), ""))
+}
+
+# Leiab viimase kuupäeva, kus kõigil fondidel on andmed
+leia_taispaev <- function(df, fondi_veerg = "Lühinimi") {
+  fondide_arv <- df %>%
+    group_by(Kuupäev) %>%
+    summarise(n = n_distinct(.data[[fondi_veerg]]), .groups = "drop")
+  max_n <- max(fondide_arv$n, na.rm = TRUE)
+  fondide_arv %>%
+    filter(n == max_n) %>%
+    pull(Kuupäev) %>%
+    max(na.rm = TRUE)
+}
 ```
 
 
@@ -75,41 +102,6 @@ fondid <- data.frame(
 fund_info <- fondid %>% rename(ID = id, Title = fond)
 ```
 
-```{r fondid_csv, message=FALSE, warning=FALSE, include=FALSE}
-# fondid <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE)
-# fondid <- data.frame()  # See rida tühjendaks fondid muutuja
-# Kui fail on tühi või pole veel täidetud, kasutame veebist leitud andmeid
-if(nrow(fondid) == 0 && nrow(fund_info) > 0) {
-  fondid <- fund_info %>%
-    rename(id = ID, fond = Title) %>%
-    mutate(indeks = ifelse(
-      grepl("indeks|Indeks|index|Index", fond, ignore.case = TRUE),
-      "x",
-      ""
-    ))
-} else if(nrow(fondid) > 0 && nrow(fund_info) > 0) {
-  # Kui meil on CSV fail ja veebist andmed, uuendame fondide nimetusi
-  fondid$fond <- NULL
-  fondid <- fondid %>%
-    mutate(id = as.character(id)) %>%
-    left_join(select(fund_info, Title, ID), by = c("id" = "ID")) %>%
-    rename(fond = Title)
-}
-
-# Kontrolli uusi fonde
-puuduvad <- data.frame()
-puudu <- FALSE
-if(nrow(fund_info) > 0) {
-  puuduvad <- fund_info %>%
-    filter(!ID %in% fondid$id)
-  if(nrow(puuduvad) > 0) puudu <- TRUE
-}
-```
-
-
-```{r check_new_funds, eval = puudu}
-cat("NB! meil on uusi fonde, mida kood ei arvesta:", puuduvad$Title)
-```
 
 
 ```{r lae_alla_info, message=FALSE, warning=FALSE}
@@ -173,9 +165,6 @@ leia_veerg_taern <- function(df, muster) {
 }
 
 # 2. ANDMETE LAADIMINE
-available_cores <- parallel::detectCores()
-worker_count <- max(1, available_cores - 1)
-plan(multisession, workers = worker_count)
 
 # Laeme KÕIKIDE fondide mahu korraga (kõik fond ID-d)
 lae_mahud <- function(from_day, yesterday) {
@@ -262,7 +251,6 @@ lae_osakuomanikud <- function() {
 }
 
 # Laeme andmed
-on.exit(plan(sequential), add = TRUE)
 raw_maht <- lae_mahud(from_day, yesterday)
 raw_koguturu_kontod <- lae_koguturu_kontod(from_day, yesterday)
 raw_osakuomanikud <- lae_osakuomanikud()
@@ -270,22 +258,14 @@ raw_osakuomanikud <- lae_osakuomanikud()
 # 3. ANDMETE ÜHENDAMINE
 if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
 
-  # Määrame indeksfondid otse fondide nimede põhjal
+  # Puhastame fondide nimed ja ühendame indeksi info fondid tabelist
   fondid_info <- raw_maht %>%
     mutate(
-      # Eemaldame "pensionifond" sõna nimedest
-      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
-      Lühinimi = str_replace_all(Lühinimi, regex("pensionifond", ignore_case = TRUE), ""),
-      # Puhastame üleliigsed tühikud
-      Fond = str_trim(Fond),
-      Lühinimi = str_trim(Lühinimi),
-      # Määrame, kas tegemist on indeksfondiga
-      indeks = ifelse(
-        grepl("V100|Indeks|Index|Aktiivne III|18\\+|16-50|III Samba", Fond, ignore.case = TRUE),
-        "x",
-        ""
-      )
-    )
+      Fond = puhasta_fondinimi(Fond),
+      Lühinimi = puhasta_fondinimi(Lühinimi)
+    ) %>%
+    left_join(fondid %>% select(fond, indeks), by = c("Lühinimi" = "fond")) %>%
+    mutate(indeks = ifelse(is.na(indeks), "", indeks))
 
   # Lisame osakuomanike (kontode) arvu viimase kuupäeva kohta
   # Pensionikeskus avaldab seda ainult värskeima seisu kohta, nii et
@@ -296,8 +276,7 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
   if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
     osakuomanikud_puhas <- raw_osakuomanikud %>%
       mutate(
-        Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
-        Fond = str_trim(Fond),
+        Fond = puhasta_fondinimi(Fond),
         osakuomanikud_uus = as.integer(osakuomanikud)
       ) %>%
       select(Fond, osakuomanikud_uus)
@@ -321,9 +300,12 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
     # Loe olemasolevad andmed
     vanad_andmed <- read_csv(csv_ajalugu, show_col_types = FALSE)
 
-    # Kui vanas failis puudub osakuomanike veerg, lisame selle
+    # Kui vanas failis puuduvad veerud, lisame need
     if(!"osakuomanikud" %in% names(vanad_andmed)) {
       vanad_andmed <- vanad_andmed %>% mutate(osakuomanikud = NA_integer_)
+    }
+    if(!"indeks" %in% names(vanad_andmed)) {
+      vanad_andmed <- vanad_andmed %>% mutate(indeks = "")
     }
 
     # Leia uued read (kuupäevad + fondid, mida ei ole veel CSV-s)
@@ -381,9 +363,8 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
   # Lisame tänase kuupäeva (eile, kuna andmed on eile seisuga)
   tanamased_investorid <- raw_osakuomanikud %>%
     mutate(
-      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
-      Fond = str_trim(Fond),
-      Kuupäev = as.Date(yesterday),  # yesterday on defineeritud real 140
+      Fond = puhasta_fondinimi(Fond),
+      Kuupäev = as.Date(yesterday),
       investorite_arv = as.integer(osakuomanikud)
     ) %>%
     select(Kuupäev, Fond, investorite_arv)
@@ -435,10 +416,7 @@ if(nrow(fondid_info) > 0) {
 ```{r set_colors, include=FALSE}
 # Määrame värvid
 if(nrow(indeksfondid) > 0) {
-  indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
-  colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
-  colors_fondid <- rep(colors, ceiling(indeksfondid_arv / length(colors)))[1:indeksfondid_arv]
-  names(colors_fondid) <- unique(indeksfondid$Lühinimi)
+  colors_fondid <- omista_varvid(unique(indeksfondid$Lühinimi))
 }
 ```
 
@@ -511,8 +489,6 @@ if(nrow(fondid_info) > 0) {
 
 ```{r plot_total_volume}
 if(nrow(k6ik_koos) > 0) {
-  options(scipen = 999)
-
   koguturu_maht <- k6ik_koos %>%
     mutate(maht_milj = round(maht_kokku / 1000000, 1)) %>%
     mutate(maht_label = format(maht_milj, big.mark = " ", decimal.mark = ","))
@@ -541,8 +517,6 @@ if(nrow(k6ik_koos) > 0) {
 
 ```{r plot_total_accounts}
 if(nrow(k6ik_koos) > 0 && !is.null(k6ik_koos$kontode_arv_koguturg)) {
-  options(scipen = 999)
-
   koguturu_kontod <- k6ik_koos %>%
     filter(!is.na(kontode_arv_koguturg)) %>%
     mutate(kontode_label = format(kontode_arv_koguturg, big.mark = " ", decimal.mark = ","))
@@ -566,6 +540,34 @@ if(nrow(k6ik_koos) > 0 && !is.null(k6ik_koos$kontode_arv_koguturg)) {
 }
 ```
 
+#### Indeksfondide osakaal
+
+```{r plot_index_share}
+if(nrow(indeksfondid_koos) > 0) {
+  indeksfondid_plot <- indeksfondid_koos %>%
+    filter(!is.na(indeks_maht_protsent))
+
+  viimane <- indeksfondid_plot %>% filter(Kuupäev == max(Kuupäev))
+  viimane_label <- paste0(format(viimane$indeks_maht_protsent, decimal.mark = ","), "%")
+
+  p <- indeksfondid_plot %>%
+    ggplot(aes(x = Kuupäev, y = indeks_maht_protsent)) +
+    geom_line() +
+    theme_ft_rc() +
+    geom_blank(aes(x = min(Kuupäev), y = 0)) +
+    labs(title = "Indeksfondide osakaal koguturu mahust",
+         x = "kuupäev",
+         y = "osakaal (%)") +
+    geom_point(data = viimane, size = 2, color = "orange") +
+    geom_text(data = viimane,
+              aes(label = viimane_label), nudge_x = 150, color = "orange")
+
+  ggplotly(p)
+} else {
+  cat("Andmed puuduvad")
+}
+```
+
 :::
 
 
@@ -582,21 +584,8 @@ if(nrow(fondid_info) > 0) {
     )
 
   # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
-  # Arvutame iga kuupäeva kohta, mitu fondi on esindatud
-  fondide_arv_kuupaeval <- fondid_turuosa %>%
-    group_by(Kuupäev) %>%
-    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
-
-  # Maksimum fondide arv (eeldame, et see on täielik andmestik)
-  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
-
-  # Viimane kuupäev, kus on maksimum fondide arv
-  maksp2ev <- fondide_arv_kuupaeval %>%
-    filter(fondide_arv == max_fondide_arv) %>%
-    pull(Kuupäev) %>%
-    max(na.rm = TRUE)
-
-  message("Kasutame kuupäeva ", maksp2ev, " (", max_fondide_arv, " fondi andmetega)")
+  maksp2ev <- leia_taispaev(fondid_turuosa)
+  message("Kasutame kuupäeva ", maksp2ev)
 
   # Võtame KÕIK fondid sellel kuupäeval
   top_fondid <- fondid_turuosa %>%
@@ -608,13 +597,9 @@ if(nrow(fondid_info) > 0) {
     filter(Lühinimi %in% top_fondid)
 
   # Värvid kõigile fondidele
-  top_arv <- length(unique(fondid_top$Lühinimi))
-  base_colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                   "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
-  # Kui fonde on rohkem kui baasvärvid, kordame neid
-  colors_top <- rep(base_colors, ceiling(top_arv / length(base_colors)))[1:top_arv]
-  names(colors_top) <- unique(fondid_top$Lühinimi)
+  colors_top <- omista_varvid(unique(fondid_top$Lühinimi))
 } else {
+  fondid_turuosa <- data.frame()
   fondid_top <- data.frame()
 }
 
@@ -622,20 +607,14 @@ if(nrow(fondid_info) > 0) {
 if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
   kontode_turuosa_viimane <- raw_osakuomanikud %>%
     mutate(
-      # Eemaldame "pensionifond" sõna nimedest
-      Fond = str_replace_all(Fond, regex("pensionifond", ignore_case = TRUE), ""),
-      Fond = str_trim(Fond),
+      Fond = puhasta_fondinimi(Fond),
       turuosa_kontod = if (sum(osakuomanikud, na.rm = TRUE) > 0)
                              round(100 * osakuomanikud / sum(osakuomanikud, na.rm = TRUE), 1) else rep(0, n())
     ) %>%
     arrange(desc(osakuomanikud))
 
   # Värvid kontode graafikutele
-  kontode_arv_viimane <- nrow(kontode_turuosa_viimane)
-  kontode_base_colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                           "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
-  colors_kontod <- rep(kontode_base_colors, ceiling(kontode_arv_viimane / length(kontode_base_colors)))[1:kontode_arv_viimane]
-  names(colors_kontod) <- kontode_turuosa_viimane$Fond
+  colors_kontod <- omista_varvid(kontode_turuosa_viimane$Fond)
 
   message("✓ Arvutatud turuosa kontode järgi viimase päeva kohta (",
           kontode_arv_viimane, " fondi)")
@@ -746,29 +725,14 @@ if(nrow(fondid_top) > 0) {
 
 ```{r plot_marketshare_barplot}
 if(nrow(fondid_turuosa) > 0) {
-  # Leiame viimase kuupäeva, kus kõigil fondidel on andmed olemas
-  fondide_arv_kuupaeval <- fondid_turuosa %>%
-    group_by(Kuupäev) %>%
-    summarise(fondide_arv = n_distinct(Lühinimi), .groups = "drop")
-
-  max_fondide_arv <- max(fondide_arv_kuupaeval$fondide_arv, na.rm = TRUE)
-
-  maksp2ev <- fondide_arv_kuupaeval %>%
-    filter(fondide_arv == max_fondide_arv) %>%
-    pull(Kuupäev) %>%
-    max(na.rm = TRUE)
+  maksp2ev <- leia_taispaev(fondid_turuosa)
 
   # Võtame KÕIK fondid TURUOSA järgi
   top_turuosa <- fondid_turuosa %>%
     filter(Kuupäev == maksp2ev, !is.na(turuosa_maht)) %>%
     arrange(desc(turuosa_maht))
 
-  # Värvid
-  top_arv_t <- nrow(top_turuosa)
-  base_colors_t <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
-                      "#dc0ab4", "#b3d4ff", "#00bfa0", "#ff6e54", "#444e86")
-  colors_turuosa <- rep(base_colors_t, ceiling(top_arv_t / length(base_colors_t)))[1:top_arv_t]
-  names(colors_turuosa) <- top_turuosa$Lühinimi
+  colors_turuosa <- omista_varvid(top_turuosa$Lühinimi)
 
   p <- top_turuosa %>%
     mutate(Lühinimi = factor(Lühinimi, levels = Lühinimi)) %>%
@@ -783,6 +747,41 @@ if(nrow(fondid_turuosa) > 0) {
   ggplotly(p)
 } else {
   cat("Andmed puuduvad")
+}
+```
+
+#### Investorite ajalugu
+
+```{r plot_investor_history}
+csv_investorid_ajalugu <- "iii_sammas_investorid_ajalugu.csv"
+if(file.exists(csv_investorid_ajalugu)) {
+  investorid_ajalugu <- read_csv(csv_investorid_ajalugu, show_col_types = FALSE)
+
+  if(nrow(investorid_ajalugu) > 0) {
+    colors_inv <- omista_varvid(unique(investorid_ajalugu$Fond))
+
+    # Sortime fondid viimase päeva investorite arvu järgi
+    viimane_kp <- max(investorid_ajalugu$Kuupäev, na.rm = TRUE)
+    fondide_jarjestus <- investorid_ajalugu %>%
+      filter(Kuupäev == viimane_kp) %>%
+      arrange(desc(investorite_arv)) %>%
+      pull(Fond)
+
+    p <- investorid_ajalugu %>%
+      mutate(Fond = factor(Fond, levels = fondide_jarjestus)) %>%
+      ggplot(aes(x = Kuupäev, y = investorite_arv, color = Fond)) +
+      geom_line() +
+      theme_ft_rc() +
+      scale_color_manual(values = colors_inv) +
+      labs(title = "Osakuomanike arvu ajalugu",
+           x = "kuupäev",
+           y = "osakuomanike arv")
+    ggplotly(p)
+  } else {
+    cat("Investorite ajaloo andmed puuduvad")
+  }
+} else {
+  cat("Investorite ajaloo fail puudub (koguneb jooksvalt)")
 }
 ```
 
