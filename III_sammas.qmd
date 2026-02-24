@@ -617,7 +617,7 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
   colors_kontod <- omista_varvid(kontode_turuosa_viimane$Fond)
 
   message("✓ Arvutatud turuosa kontode järgi viimase päeva kohta (",
-          kontode_arv_viimane, " fondi)")
+          nrow(kontode_turuosa_viimane), " fondi)")
 } else {
   kontode_turuosa_viimane <- data.frame()
   message("! Kontode turuosa andmed puuduvad")
