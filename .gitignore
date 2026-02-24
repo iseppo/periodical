@@ -63,5 +63,9 @@ cache_nav_data.rds
 cache_inflation_data.rds
 III_sammas.html
 iii_sammas_ajalugu.csv
+iii_sammas_investorid_ajalugu.csv
 iii_sammas_koguturg.csv
 iii_sammas_top_fondid.csv
+turuylevaade_files/
+# OMC plugin tööfailid
+.omc/
