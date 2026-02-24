@@ -421,7 +421,7 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
     ) %>%
     # Lisame protsendi märgid
     mutate(
-      value_pc = paste0(format(round(100 * value, 1), nsmall = 1), "%")
+      value_pc = paste0(round(100 * value), "%")
     ) %>%
     # Joonistame graafiku
     ggplot(aes(x = aasta, y = value, fill = name)) +
