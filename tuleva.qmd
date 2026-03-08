@@ -42,6 +42,16 @@ library(janitor)
 library(ggfittext)
 
 hrbrthemes::import_roboto_condensed()
+
+# Läbipaistev taust, et graafikud blendiksid lehe taustaga
+theme_transparent <- theme(
+  plot.background = element_rect(fill = "transparent", colour = NA),
+  panel.background = element_rect(fill = "transparent", colour = NA),
+  legend.background = element_rect(fill = "transparent", colour = NA),
+  legend.key = element_rect(fill = "transparent", colour = NA)
+)
+
+knitr::opts_chunk$set(dev.args = list(bg = "transparent"))
 ```
 
 ```{r}
@@ -116,8 +126,9 @@ p <- navid %>%
   scale_x_date(date_labels = "%m/%Y") +
   geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
   labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
-       y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp))
-ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "white")
+       y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
+  theme_transparent
+ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "transparent")
 
 ```
 
@@ -184,7 +195,8 @@ if (nrow(fondide_tasud) > 0) {
     labs(title = "Fondide jooksva tasu suurus", subtitle = "Kui palju maksad jooksvaid tasusid aastas\niga senikogutud 10 tuhande euro kohta?",
          x = "fond", y = "jooksvad tasud (eurot aastas)", caption = "allikas: Pensionikeskus") +
     coord_flip() +
-    theme_ipsum_rc()
+    theme_ipsum_rc() +
+    theme_transparent
 } else {
   p_tasud <- ggplot() +
     annotate("text", x = 0.5, y = 0.5,
@@ -254,7 +266,8 @@ if (yahoo_ok) {
     geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
     scale_x_date(date_labels = "%m/%Y") +
     theme_ipsum_rc() +
-    labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date))
+    labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date)) +
+    theme_transparent
 } else {
   # Loome tühja graafiku, kui Yahoo andmed pole kättesaadavad
   sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)
