@@ -6,7 +6,7 @@
   --bg-white: #FFFFFF;
   --text: #1A1A1A;
   --text-dark: #2D2A26;
-  --text-secondary: #6B6560;
+  --text-secondary: #5A554F;
   --text-muted: #9A9590;
   --accent: #B07D4F;
   --accent-hover: #96693F;
@@ -73,7 +73,7 @@ a:hover {
   font-size: 1.15rem;
   opacity: 0.75;
   font-family: var(--font-sans);
-  font-weight: 300;
+  font-weight: 400;
 }
 .hero-banner em, .hero-banner i {
   color: var(--bg);
@@ -130,7 +130,7 @@ a:hover {
 }
 .stat-label {
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 1.5px;
