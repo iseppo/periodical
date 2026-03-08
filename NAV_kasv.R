@@ -39,7 +39,8 @@ suppressPackageStartupMessages({
 # Seadistame paralleliseerimise kasutades kõiki saadaolevaid tuumi (jättes 1 vabaks)
 # Optimeeritud kiiremaks töötluseks
 available_cores <- parallel::detectCores()
-worker_count <- max(2, available_cores - 1)  # Vähemalt 2, maksimaalselt N-1
+is_ci <- nzchar(Sys.getenv("CI"))
+worker_count <- if (is_ci) available_cores else max(2, available_cores - 1)
 plan(multisession, workers = worker_count)
 
 #-------------------------------------------------------------------------------

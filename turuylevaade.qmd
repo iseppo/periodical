@@ -116,7 +116,8 @@ cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
 #if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
   # OPTIMEERITUD: kasutame kõiki saadaolevaid tuumi (jättes 1 vabaks)
   available_cores <- parallel::detectCores()
-  worker_count <- max(2, available_cores - 1)
+  is_ci <- nzchar(Sys.getenv("CI"))
+  worker_count <- if (is_ci) available_cores else max(2, available_cores - 1)
   plan(multisession, workers = worker_count)
   on.exit(plan(sequential), add = TRUE)
   fondid_investorid <- furrr::future_map_dfr(fondid$id, function(i) {
