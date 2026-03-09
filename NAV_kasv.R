@@ -453,8 +453,13 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
         "\nligikaudsed arvutused: Indrek Seppo"
       )
     ) +
-    theme(legend.position = "top")
-  
+    theme(
+      legend.position = "top",
+      plot.background = element_rect(fill = "#F6F4EF", colour = NA),
+      panel.background = element_rect(fill = "#F6F4EF", colour = NA),
+      legend.background = element_rect(fill = "#F6F4EF", colour = NA)
+    )
+
   # Salvestame faili
   ggsave(
     p_aastane_tulu,
@@ -463,7 +468,7 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
     height = 600,
     units = "px",
     dpi = 300,
-    bg = "white",
+    bg = "#F6F4EF",
     scale = 2.5
   )
 }
@@ -604,7 +609,10 @@ create_specific_animation <- function(animeeritud_andmed_raw,
       axis.title.x = element_text(size = 20),
       axis.title.y = element_text(size = 20),
       axis.text.x = element_text(size = 20),
-      axis.text.y = element_text(size = 20)
+      axis.text.y = element_text(size = 20),
+      plot.background = element_rect(fill = "#F6F4EF", colour = NA),
+      panel.background = element_rect(fill = "#F6F4EF", colour = NA),
+      legend.background = element_rect(fill = "#F6F4EF", colour = NA)
     ) +
     labs(
       title = "Kui palju on keskmiselt kasvanud raha?",
