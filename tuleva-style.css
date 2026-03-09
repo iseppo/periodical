@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700&family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* seppo.ai disainisüsteem */
 :root {
@@ -14,7 +14,7 @@
   --border: #E5E0D8;
   --border-light: #EDE9E3;
   --font-serif: 'Cormorant Garamond', 'Georgia', serif;
-  --font-sans: 'Outfit', 'Helvetica Neue', sans-serif;
+  --font-sans: 'Inter', 'Helvetica Neue', sans-serif;
 }
 
 body {
