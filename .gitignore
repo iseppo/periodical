@@ -61,6 +61,8 @@ inflatsioonpalk.png
 # Cache files for performance optimization
 cache_nav_data.rds
 cache_inflation_data.rds
+# Runtime-generated III samba fondiloend; repo keeps a stable seed snapshot under data/
+Pensionifondid_III.csv
 III_sammas.html
 iii_sammas_ajalugu.csv
 iii_sammas_investorid_ajalugu.csv

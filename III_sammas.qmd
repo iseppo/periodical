@@ -97,6 +97,15 @@ upsert_ajaloo_read <- function(vanad_andmed, uued_andmed, keys) {
     arrange(!!!rlang::syms(keys))
 }
 
+loe_fondiloend_failist <- function(path) {
+  read_csv(path, show_col_types = FALSE) %>%
+    transmute(
+      id = as.character(id),
+      fond = puhasta_fondinimi(fond),
+      indeks = ifelse(is.na(indeks), "", indeks)
+    )
+}
+
 liida_indeksiinfo <- function(andmed, lookup) {
   lookup_clean <- lookup %>%
     transmute(
@@ -122,50 +131,23 @@ liida_indeksiinfo <- function(andmed, lookup) {
 
 
 ```{r fondid_online}
-# Hardcoded fallback, kui dünaamiliselt uuendatud fondiloend puudub.
-fallback_fondid <- data.frame(
-  id = c("55", "72", "87", "53", "41", "93", "43", "34",
-         "90", "89", "33", "79", "42", "84", "32", "85", "81"),
-  fond = c(
-    "LHV Pensionifond Aktiivne III",
-    "LHV Pensionifond Indeks III",
-    "Luminor Jätkusuutlik Tulevik 50-55 Indeks Pensionifond",
-    "Luminor Tulevik 16-50 Pensionifond",
-    "Luminor Tulevik 55+ Pensionifond",
-    "Luminor Tulevik Indeks Pensionifond",
-    "SEB III samba pensionifond 18+",
-    "SEB III samba pensionifond 65+",
-    "SEB kliimatuleviku pensionifond indeks",
-    "Swedbank III Samba Pensionifond Indeks",
-    "Swedbank Pensionifond V100",
-    "Swedbank Pensionifond V100 indeks (väljumine piiratud)",
-    "Swedbank Pensionifond V30",
-    "Swedbank Pensionifond V30 indeks (väljumine piiratud)",
-    "Swedbank Pensionifond V60",
-    "Swedbank Pensionifond V60 indeks (väljumine piiratud)",
-    "Tuleva III Samba Pensionifond"
-  ),
-  indeks = c("", "x", "x", "", "", "x", "", "",
-             "x", "x", "", "x", "", "x", "", "x", ""),
-  stringsAsFactors = FALSE
-)
+runtime_fondiloend <- "Pensionifondid_III.csv"
+seed_fondiloend <- "data/Pensionifondid_III_seed.csv"
 
-# Eelistame fetch_iii_sammas_fondid.R loodud nimekirja, kuid jätame käsitsi kontrollitud fallback'i alles.
+fallback_fondid <- loe_fondiloend_failist(seed_fondiloend)
+
+# Eelistame jooksu käigus genereeritud fondiloendit, kuid puhtas kloonis
+# või fetchi vea korral kasutame repoga kaasas olevat seed-snapshot'i.
 fondid <- tryCatch({
-  kandidaat <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE) %>%
-    transmute(
-      id = as.character(id),
-      fond = puhasta_fondinimi(fond),
-      indeks = ifelse(is.na(indeks), "", indeks)
-    )
+  kandidaat <- loe_fondiloend_failist(runtime_fondiloend)
 
   if (nrow(kandidaat) < 5) {
-    stop("fondiloendis on liiga vähe ridu")
+    stop("genereeritud fondiloendis on liiga vähe ridu")
   }
 
   kandidaat
 }, error = function(e) {
-  message("Kasutan III samba fallback-fondiloendit: ", e$message)
+  message("Kasutan III samba seed-fondiloendit: ", e$message)
   fallback_fondid
 })
 
@@ -513,7 +495,7 @@ if(nrow(fondid_info) > 0) {
 if(nrow(fondid_info) > 0) {
   cat("Andmed:", as.character(andmed_alates), "--", as.character(andmed_kuni), "\n")
 } else {
-  cat("Andmete laadimine ebaõnnestus. Palun kontrolli Pensionifondid_III.csv faili ja veendu, et seal on fondide ID-d määratud.\n\nVõid kasutada skripti fetch_iii_sammas_fondid.R fondide nimekirja hankimiseks.")
+  cat("Andmete laadimine ebaõnnestus. Palun kontrolli data/Pensionifondid_III_seed.csv faili või käivita fetch_iii_sammas_fondid.R, et luua värske Pensionifondid_III.csv.\n")
 }
 ```
 

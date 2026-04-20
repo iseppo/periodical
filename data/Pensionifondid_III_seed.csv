@@ -1,12 +1,13 @@
 id,fond,indeks
-72,LHV Pensionifond Indeks III,x
 55,LHV Pensionifond Aktiivne III,
+72,LHV Pensionifond Indeks III,x
 87,Luminor Jätkusuutlik Tulevik 50-55 Indeks Pensionifond,x
 53,Luminor Tulevik 16-50 Pensionifond,
 41,Luminor Tulevik 55+ Pensionifond,
-90,SEB kliimatuleviku pensionifond indeks,x
+93,Luminor Tulevik Indeks Pensionifond,x
 43,SEB III samba pensionifond 18+,
 34,SEB III samba pensionifond 65+,
+90,SEB kliimatuleviku pensionifond indeks,x
 89,Swedbank III Samba Pensionifond Indeks,x
 33,Swedbank Pensionifond V100,
 79,Swedbank Pensionifond V100 indeks (väljumine piiratud),x
@@ -14,4 +15,4 @@ id,fond,indeks
 84,Swedbank Pensionifond V30 indeks (väljumine piiratud),x
 32,Swedbank Pensionifond V60,
 85,Swedbank Pensionifond V60 indeks (väljumine piiratud),x
-81,Tuleva III Samba Pensionifond,x
+81,Tuleva III Samba Pensionifond,

@@ -4,6 +4,9 @@ suppressPackageStartupMessages({
   library(dplyr)
 })
 
+runtime_fondiloend <- "Pensionifondid_III.csv"
+seed_fondiloend <- "data/Pensionifondid_III_seed.csv"
+
 # Korrektne URL kolmanda samba fondide jaoks
 url <- "https://www.pensionikeskus.ee/iii-sammas/vabatahtlikud-fondid/fonditasude-vordlus/"
 
@@ -44,10 +47,13 @@ tryCatch({
 
   # Kontrollime, kas leidsime piisavalt fonde enne ülekirjutamist
   if (nrow(fund_info) < 5) {
-    cat("Hoiatus: leiti ainult", nrow(fund_info), "fondi — CSV-d ei kirjutata üle.\n")
+    if (file.exists(runtime_fondiloend)) {
+      unlink(runtime_fondiloend)
+    }
+    cat("Hoiatus: leiti ainult", nrow(fund_info), "fondi — kasutan seed-faili", seed_fondiloend, "\n")
   } else {
-    # Salvesta CSV-sse
-    write.csv(fund_info, "Pensionifondid_III.csv", row.names = FALSE, fileEncoding = "UTF-8")
+    # Salvesta jooksu käigus genereeritud fondiloend eraldi runtime-failina
+    write.csv(fund_info, runtime_fondiloend, row.names = FALSE, fileEncoding = "UTF-8")
     cat("Leitud", nrow(fund_info), "kolmanda samba fondi\n")
   }
   print(fund_info)
@@ -55,18 +61,13 @@ tryCatch({
 }, error = function(e) {
   cat("Viga fondide loendi hankimisel:", conditionMessage(e), "\n")
 
-  # Kontrolli, kas fail juba eksisteerib
-  if(!file.exists("Pensionifondid_III.csv") || file.size("Pensionifondid_III.csv") < 50) {
-    cat("Loon tühja Pensionifondid_III.csv faili...\n")
-    # Kui faili pole või on tühi, loo tühi struktuur
-    empty_df <- data.frame(
-      id = character(),
-      fond = character(),
-      indeks = character(),
-      stringsAsFactors = FALSE
-    )
-    write.csv(empty_df, "Pensionifondid_III.csv", row.names = FALSE, fileEncoding = "UTF-8")
+  if (file.exists(runtime_fondiloend)) {
+    unlink(runtime_fondiloend)
+  }
+
+  if (file.exists(seed_fondiloend) && file.size(seed_fondiloend) > 50) {
+    cat("Kasutan repoga kaasas olevat seed-faili:", seed_fondiloend, "\n")
   } else {
-    cat("Kasutan olemasolevat Pensionifondid_III.csv faili.\n")
+    cat("Seed-fail puudub või on vigane:", seed_fondiloend, "\n")
   }
 })
