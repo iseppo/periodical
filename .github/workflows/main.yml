@@ -15,12 +15,27 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Setup SSH agent
-      uses: webfactory/ssh-agent@v0.9.1
-      with:
-        ssh-private-key: ${{ secrets.UPLOAD_TO_ZONE }}
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.UPLOAD_TO_ZONE }}
+      run: |
+        set -euo pipefail
+        install -d -m 700 ~/.ssh
+        key_file="$RUNNER_TEMP/upload_to_zone.key"
+        printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
+        chmod 600 "$key_file"
+
+        eval "$(ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock")"
+        ssh-add "$key_file"
+        rm -f "$key_file"
+
+        {
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID"
+        } >> "$GITHUB_ENV"
 
     - name: Add server fingerprint
       run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
@@ -46,3 +61,11 @@ jobs:
 
             echo '--- Done ---'
           "
+
+    - name: Stop SSH agent
+      if: always()
+      shell: bash
+      run: |
+        if [ -n "${SSH_AGENT_PID:-}" ]; then
+          ssh-agent -k
+        fi
