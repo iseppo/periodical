@@ -89,45 +89,57 @@ if (length(puuduvad) > 0) {
   warning("Puuduvad fondid pärast ümbernimetamist: ", paste(puuduvad, collapse = ", "),
           "\nOlemasolevad fondid: ", paste(unique(navid$Fond), collapse = ", "))
 }
-navid <- navid %>%
-  mutate(Kuupäev = dmy(Kuupäev)) %>%
-  group_by(Fond, Lühinimi) %>%
-  arrange(Kuupäev, .by_group = TRUE) %>%
-  mutate(NAV = if (first(NAV) != 0) NAV / first(NAV) else NA_real_) %>%
-  ungroup()
+navid_ok <- nrow(navid) > 0
 
-navid_end <- navid %>%
-  filter(Kuupäev == max(Kuupäev))
+if (navid_ok) {
+  navid <- navid %>%
+    mutate(Kuupäev = dmy(Kuupäev)) %>%
+    group_by(Fond, Lühinimi) %>%
+    arrange(Kuupäev, .by_group = TRUE) %>%
+    mutate(NAV = if (first(NAV) != 0) NAV / first(NAV) else NA_real_) %>%
+    ungroup()
 
-juhtimas <- navid_end %>%
-  arrange(desc(NAV)) %>%
-  slice(1)
+  navid_end <- navid %>%
+    filter(Kuupäev == max(Kuupäev))
 
-max_kp <- max(navid$Kuupäev)
+  juhtimas <- navid_end %>%
+    arrange(desc(NAV)) %>%
+    slice(1)
 
-navid_end <- navid_end %>%
-  mutate(Fond = fct_reorder(Fond, NAV)) %>%
-  mutate(Fond = fct_rev(Fond))
+  max_kp <- max(navid$Kuupäev)
 
-navid <- navid %>%
-  mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
+  navid_end <- navid_end %>%
+    mutate(Fond = fct_reorder(Fond, NAV)) %>%
+    mutate(Fond = fct_rev(Fond))
 
-padding_date <- max_kp + days(60)
+  navid <- navid %>%
+    mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
 
-p <- navid %>%
-  ggplot(aes(x = Kuupäev, y = NAV)) +
-  geom_line(aes(color = Fond)) +
-  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
-  geom_blank(aes(x = padding_date, y = 0.9)) +
-  geom_point(data = navid_end, size = 2, aes(color = Fond)) +
-  theme_ipsum_rc() +
-  scale_color_manual(values = FONDIDE_VARVID) +
-  scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
-  scale_x_date(date_labels = "%m/%Y") +
-  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
-  labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
-       y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
-  theme_transparent
+  padding_date <- max_kp + days(60)
+
+  p <- navid %>%
+    ggplot(aes(x = Kuupäev, y = NAV)) +
+    geom_line(aes(color = Fond)) +
+    geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
+    geom_blank(aes(x = padding_date, y = 0.9)) +
+    geom_point(data = navid_end, size = 2, aes(color = Fond)) +
+    theme_ipsum_rc() +
+    scale_color_manual(values = FONDIDE_VARVID) +
+    scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
+    scale_x_date(date_labels = "%m/%Y") +
+    geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
+    labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
+         y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
+    theme_transparent
+
+} else {
+  juhtimas <- tibble(Fond = "andmed puuduvad")
+  max_kp <- ANDMETE_LOPP
+  p <- ggplot() +
+    annotate("text", x = 0.5, y = 0.5, label = "Pensionikeskuse NAV andmed pole kättesaadavad") +
+    theme_void()
+}
+
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "transparent")
 
 ```
@@ -255,19 +267,27 @@ if (yahoo_ok) {
       mutate(SP500TR.Close = SP500TR.Close / SP500TR.Close[1] * 1000)
   }
 
-  sp500_lastvalue <- sp500_tr_eur_df %>%
-    filter(Date == max(Date))
+  if (nrow(sp500_tr_eur_df) > 0) {
+    sp500_lastvalue <- sp500_tr_eur_df %>%
+      filter(Date == max(Date))
 
-  max_date <- max(sp500_lastvalue$Date)
-  p_summa <- sp500_tr_eur_df %>%
-    ggplot(aes(x = Date, y = SP500TR.Close)) +
-    geom_line() +
-    geom_point(data = sp500_lastvalue, size = 2) +
-    geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
-    scale_x_date(date_labels = "%m/%Y") +
-    theme_ipsum_rc() +
-    labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date)) +
-    theme_transparent
+    max_date <- max(sp500_lastvalue$Date)
+    p_summa <- sp500_tr_eur_df %>%
+      ggplot(aes(x = Date, y = SP500TR.Close)) +
+      geom_line() +
+      geom_point(data = sp500_lastvalue, size = 2) +
+      geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
+      scale_x_date(date_labels = "%m/%Y") +
+      theme_ipsum_rc() +
+      labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date)) +
+      theme_transparent
+  } else {
+    sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)
+    max_date <- ANDMETE_LOPP
+    p_summa <- ggplot() +
+      annotate("text", x = 0.5, y = 0.5, label = "Yahoo Finance andmed pole kättesaadavad") +
+      theme_void()
+  }
 } else {
   # Loome tühja graafiku, kui Yahoo andmed pole kättesaadavad
   sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)

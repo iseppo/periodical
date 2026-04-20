@@ -10,10 +10,10 @@ Koostab regulaarselt turuülevaateid ja pensionifondide võrdlusi. Kood renderda
 ## Repositooriumi struktuur
 
 - `NAV_kasv.R` – hangib andmed ja koostab graafikud.
-- `run_turuylevaade.R` – juhib kogu analüüsi ning laadib tulemused serverisse.
+- `run_turuylevaade.R` – kanoniline käivitusskript, mis juhib kogu analüüsi ja laadib tulemused serverisse.
 - `turuylevaade.qmd` ja `tuleva.qmd` – Quarto aruannete allikfailid.
 - `Dockerfile` – konteiner keskkonna kirjeldus.
-- `.github/workflows` – GitHub Actions töövood automaatseks käivitamiseks.
+- `.github/workflows/main.yml` – igapäevane GitHub Actions töövoog.
 
 ## Käivitamine käsitsi
 
@@ -23,11 +23,11 @@ Peamenüü käsu saab käivitada reposti juurkataloogist:
 Rscript run_turuylevaade.R
 ```
 
-Skript koostab graafikud ja renderdab `turuylevaade.qmd` ning `tuleva.qmd` failid. Lõpuks laaditakse valminud tulemused SSH abil serverisse.
+Skript käivitab kogu pipeline'i: koostab graafikud, uuendab III samba sisendandmed, renderdab Quarto failid ja laadib valminud tulemused SSH abil serverisse.
 
 ## GitHub Actions
 
-Kataloogis `.github/workflows` on töövoog, mis käivitab skripti iga päev kell 07:05 UTC.
+Kataloogis `.github/workflows/main.yml` on töövoog, mis käivitab kanonilise `run_turuylevaade.R` skripti iga päev kell 11:05 UTC.
 
 
 ## Dockeriga käivitamine
@@ -50,4 +50,3 @@ Analüüs kasutab andmeid allikatest:
 ## Litsents
 
 Projekt on avaldatud BSD 3-Clause litsentsi alusel. Täpsemad tingimused leiad failist [LICENSE](LICENSE).
-

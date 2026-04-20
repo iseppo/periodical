@@ -300,7 +300,7 @@ indeks_pikk <- indeksfondid_koos %>%
 indeks_pikk %>%
   select(Kuupäev, name, value) %>%
   pivot_wider(names_from = name, values_from = value) %>%
-  write_csv("koguturg_indeksfondid_osakaal.csv")
+  write_csv(file = "koguturg_indeksfondid_osakaal.csv")
 
 p <- indeks_pikk %>%
   ggplot(aes(x = Kuupäev, y = value)) +
@@ -791,6 +791,22 @@ period_end <- data$period_info$end
 fundnames <- t(data$funds) %>%
   as.data.frame()
 
+jarjesta_fondid <- function(nimed, vaartus) {
+  nimed_chr <- as.character(nimed)
+  nimed_chr[is.na(nimed_chr) | nimed_chr == ""] <- "Tundmatu fond"
+  factor(nimed_chr, levels = unique(nimed_chr[order(vaartus, na.last = TRUE)]))
+}
+
+ohutu_max <- function(x, default = 0) {
+  vals <- x[is.finite(x)]
+  if (length(vals) == 0) default else max(vals)
+}
+
+ohutu_min <- function(x, default = 0) {
+  vals <- x[is.finite(x)]
+  if (length(vals) == 0) default else min(vals)
+}
+
 get_fundname <- function(name){
   if(str_length(name) < 12) return(paste0("PIK: ", name))
   entry <- fundnames[[name]]
@@ -808,8 +824,9 @@ for(i in vahetus$isin){
   vahetus$fond[vahetus$isin == i] <- get_fundname(i)
 }
 fondinimed <- fondid_info %>%
-  select(fond = Fond, lühinimi = Lühinimi) %>%
-  unique()
+  filter(Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
+  transmute(fond = Fond, lühinimi = Lühinimi) %>%
+  distinct(fond, .keep_all = TRUE)
 
 vahetus <- vahetus %>%
   select(fond, count_to_fund, count_to_pik, count_from_fund, count_from_pik, amount_to_fund, amount_to_pik, amount_from_fund, amount_from_pik) %>%
@@ -826,7 +843,8 @@ vahetus_tuleva <- vahetus %>%
 indeks_vahetus <- vahetus %>%
   filter(fond %in% fondid_indeks$fond)
 
-indeks_vahetus <- left_join(indeks_vahetus, fondinimed, by = "fond")
+indeks_vahetus <- left_join(indeks_vahetus, fondinimed, by = "fond") %>%
+  mutate(lühinimi = if_else(is.na(lühinimi) | lühinimi == "", fond, lühinimi))
 
 # NB: count_to_fund sisaldab juba count_to_pik (liideti ülalpool),
 # seega ei tohi neid uuesti kokku liita
@@ -864,7 +882,7 @@ Tuleva põhifondi lisandus **`r round(vahetus_tuleva$amount_from_fund/1000000, 1
 ```{r}
 graafikule <- indeks_vahetus %>%
   rename(huvitav = count_from_fund) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
   mutate(label = paste0(huvitav, "\n", protsent)) 
 
@@ -873,9 +891,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "investoreid") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 p
@@ -888,7 +906,7 @@ p
 graafikule <- indeks_vahetus %>%
   rename(huvitav = amount_from_fund) %>%
   mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
   mutate(label = paste0(huvitav, "\n", protsent)) 
 
@@ -897,9 +915,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "miljonit eurot") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 p
@@ -911,7 +929,7 @@ p
 ```{r}
 graafikule <- indeks_vahetus %>%
   mutate(huvitav = if_else(count_from_fund > 0, round(amount_from_fund/count_from_fund), 0L)) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(label = paste0(huvitav, "€"))
 
 p <- graafikule %>%
@@ -919,9 +937,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Keskmine summa teistest fondidest", subtitle = period_end, x = "eurot") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 
@@ -934,7 +952,7 @@ p
 ```{r}
 graafikule <- indeks_vahetus %>%
   rename(huvitav = count_to_fund) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
   mutate(label = paste0(huvitav, "\n", protsent)) 
 
@@ -943,9 +961,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "investoreid") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 p
@@ -959,7 +977,7 @@ p
 graafikule <- indeks_vahetus %>%
   rename(huvitav = amount_to_fund) %>%
   mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
   mutate(label = paste0(huvitav, "\n", protsent)) 
 
@@ -968,9 +986,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "miljonit eurot") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 p
@@ -981,7 +999,7 @@ p
 ```{r}
 graafikule <- indeks_vahetus %>%
   mutate(huvitav = if_else(count_to_fund > 0, round(amount_to_fund/count_to_fund), 0L)) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(label = paste0(huvitav, "€"))
 
 p <- graafikule %>%
@@ -989,9 +1007,9 @@ p <- graafikule %>%
   geom_col() +
   geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
   labs(title = "Keskmine summa teistesse fondidesse", subtitle = period_end, x = "eurot") +
-  geom_text(aes(label = label), nudge_x = max(graafikule$huvitav * 0.06)) +
+  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
   geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = max(graafikule$huvitav * 0.06),
+            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
             color = "#00aeea") +
   theme_ft_rc()
 
@@ -1003,7 +1021,7 @@ p
 graafikule <- indeks_vahetus %>%
   mutate(huvitav = amount_from_fund - amount_to_fund) %>%
   mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
   mutate(label = paste0(huvitav)) 
 
 label_pos <- graafikule %>%
@@ -1027,17 +1045,17 @@ p <- graafikule %>%
   theme_ft_rc()
 
 if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x = max(label_pos$huvitav * 0.06))
+                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06))
 if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = min(graafikule$huvitav * 0.60 - 0.5),
+                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60 - 0.5),
                                            color = "brown3")
 
 
 if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = max(label_pos$huvitav * 0.06),
+                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06),
                                            color = "#00aeea")
 if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = min(graafikule$huvitav * 0.60),
+                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
                                            color = "#00aeea")
 
 p
@@ -1048,7 +1066,7 @@ p
 ```{r}
 graafikule <- indeks_vahetus %>%
   mutate(huvitav = count_from_fund - count_to_fund) %>%
-  mutate(fond = fct_reorder(lühinimi, huvitav)) %>%
+  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
 #  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
   mutate(label = paste0(huvitav)) 
 
@@ -1073,17 +1091,17 @@ p <- graafikule %>%
   theme_ft_rc()
 
 if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x = max(label_pos$huvitav * 0.06))
+                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06))
 if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = min(graafikule$huvitav * 0.60),
+                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
                                            color = "brown3")
 
 
 if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = max(label_pos$huvitav * 0.06),
+                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06),
                                            color = "#00aeea")
 if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = min(graafikule$huvitav * 0.60),
+                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
                                            color = "#00aeea")
 
 p
@@ -1091,6 +1109,3 @@ p
 
 
 :::
-
-
-

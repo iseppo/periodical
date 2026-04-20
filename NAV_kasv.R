@@ -658,7 +658,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
   ))
 
   if (exit_code != 0) {
-    warning("ffmpeg ebaõnnestus (kood: ", exit_code, "). Vahefail säilitatud: ", mp4_input)
+    stop("ffmpeg ebaõnnestus (kood: ", exit_code, "). Vahefail säilitatud: ", mp4_input, call. = FALSE)
   } else {
     # Kustutame vahefaili ainult eduka kodeerimise korral
     file.remove(mp4_input)
@@ -808,7 +808,7 @@ should_update_animation <- function(filepath) {
 #' Peamine käivitamise funktsioon
 #' 
 #' @param generate_tuleva_version_arg Kas genereerida ka Tuleva versioon
-main <- function(generate_tuleva_version_arg = TRUE) {
+main <- function(generate_tuleva_version_arg = FALSE) {
   on.exit(plan(sequential), add = TRUE)
 
   total_start <- Sys.time()

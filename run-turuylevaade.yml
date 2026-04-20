@@ -39,16 +39,7 @@ jobs:
           --workdir "/home/rstudio/project" \
           ghcr.io/iseppo/periodical:main \
           bash -c "
-            echo '--- Running R script ---'
-            Rscript NAV_kasv.R
-            
-            echo '--- Rendering Quarto reports ---'
-            quarto render turuylevaade.qmd
-            quarto render tuleva.qmd
-            
-            echo '--- Uploading files to server ---'
-            scp ./aastane_tulu_tuleva_lhv.png ./aastane_tulu_animeeritud.mp4 ./tuleva.html virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/kihlveod/
-            scp ./turuylevaade.html ./koguturg_indeksfondid_osakaal.csv ./koguturg_koguinfo.csv virt135256@${{ secrets.SERVER_HOST }}:/data03/virt135256/domeenid/www.seppo.ai/htdocs/tuleva/
-            
+            set -euo pipefail
+            Rscript run_turuylevaade.R
             echo '--- Done ---'
           "

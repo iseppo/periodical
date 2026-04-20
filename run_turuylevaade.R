@@ -1,6 +1,49 @@
 # Lae vajalikud teegid
 library(ssh)
 
+run_command <- function(command, args = character(), error_label = command) {
+  status <- system2(command, args = args)
+  if (status != 0) {
+    stop(error_label, " ebaõnnestus (kood: ", status, ")", call. = FALSE)
+  }
+}
+
+require_existing_files <- function(files, label) {
+  missing_files <- files[!file.exists(files)]
+  if (length(missing_files) > 0) {
+    stop(
+      label,
+      " jaoks puuduvad vajalikud failid: ",
+      paste(missing_files, collapse = ", "),
+      call. = FALSE
+    )
+  }
+}
+
+require_fresh_files <- function(files, label, earliest_time) {
+  stale_files <- files[
+    !file.exists(files) |
+      vapply(
+        files,
+        function(path) file.info(path)$mtime < earliest_time,
+        logical(1)
+      )
+  ]
+
+  if (length(stale_files) > 0) {
+    stop(
+      label,
+      " jaoks puuduvad värsked failid: ",
+      paste(stale_files, collapse = ", "),
+      call. = FALSE
+    )
+  }
+}
+
+is_fresh_file <- function(path, earliest_time) {
+  file.exists(path) && file.info(path)$mtime >= earliest_time
+}
+
 #' Laeb üles kausta struktuuri SSH kaudu
 #'
 #' @param session SSH sessioon
@@ -31,30 +74,45 @@ upload_with_structure <- function(session, local_dir, remote_dir) {
   }
 }
 
+pipeline_start <- Sys.time()
+
 # 1. Käivita kogu R-skript. See genereerib kõik vajalikud failid.
-#    Kuna 'NAV_kasv.R' lõpus on 'main()', käivitub see automaatselt.
 message("Käivitan NAV_kasv.R skripti failide genereerimiseks...")
-tryCatch(source("NAV_kasv.R"), error = function(e) {
-  message("NAV_kasv.R ebaõnnestus: ", e$message, " — jätkan...")
-})
+run_command("Rscript", "NAV_kasv.R", error_label = "NAV_kasv.R")
 
 # 2. Tõmbame III samba fondide nimekirja
 message("Tõmban III samba fondide nimekirja...")
-tryCatch(source("fetch_iii_sammas_fondid.R"), error = function(e) {
-  message("fetch_iii_sammas_fondid.R ebaõnnestus: ", e$message, " — jätkan...")
-})
+run_command("Rscript", "fetch_iii_sammas_fondid.R", error_label = "fetch_iii_sammas_fondid.R")
 
-# 3. Käivita Quarto renderdamised (kontrollime tagastusväärtust)
+# 3. Käivita Quarto renderdamised
 message("Renderdan Quarto faile...")
+run_command("quarto", c("render", "turuylevaade.qmd"), error_label = "turuylevaade.qmd renderdamine")
+run_command("quarto", c("render", "tuleva.qmd"), error_label = "tuleva.qmd renderdamine")
+run_command("quarto", c("render", "III_sammas.qmd"), error_label = "III_sammas.qmd renderdamine")
 
-ret <- system("quarto render turuylevaade.qmd")
-if (ret != 0) warning("turuylevaade.qmd renderdamine ebaõnnestus (kood: ", ret, ")")
+require_fresh_files(
+  c(
+    "aastane_tulu_tuleva_lhv.png",
+    "kihlvedu.png",
+    "tuleva.html",
+    "turuylevaade.html",
+    "III_sammas.html",
+    "koguturg_indeksfondid_osakaal.csv",
+    "koguturg_koguinfo.csv",
+    "iii_sammas_koguturg.csv",
+    "iii_sammas_ajalugu.csv",
+    "iii_sammas_investorid_ajalugu.csv"
+  ),
+  "üleslaadimine",
+  pipeline_start
+)
 
-ret <- system("quarto render tuleva.qmd")
-if (ret != 0) warning("tuleva.qmd renderdamine ebaõnnestus (kood: ", ret, ")")
-
-ret <- system("quarto render III_sammas.qmd")
-if (ret != 0) warning("III_sammas.qmd renderdamine ebaõnnestus (kood: ", ret, ")")
+require_existing_files(
+  c(
+    "aastane_tulu_animeeritud.mp4"
+  ),
+  "üleslaadimine"
+)
 
 # 4. Lae failid üles
 message("Alustan failide üleslaadimist SSH kaudu...")
@@ -111,9 +169,11 @@ tryCatch({
   # Lae üles III samba failid (kui eksisteerivad)
   iii_failid <- c("./III_sammas.html",
                    "./iii_sammas_koguturg.csv",
-                   "./iii_sammas_top_fondid.csv",
                    "./iii_sammas_ajalugu.csv",
                    "./iii_sammas_investorid_ajalugu.csv")
+  if (is_fresh_file("iii_sammas_top_fondid.csv", pipeline_start)) {
+    iii_failid <- c(iii_failid, "./iii_sammas_top_fondid.csv")
+  }
   iii_failid <- iii_failid[file.exists(iii_failid)]
 
   if (length(iii_failid) > 0) {

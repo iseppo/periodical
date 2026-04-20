@@ -58,7 +58,20 @@ omista_varvid <- function(nimed) {
 
 # Eemaldab "pensionifond" sõna ja puhastab tühikud
 puhasta_fondinimi <- function(nimi) {
-  str_trim(str_replace_all(nimi, regex("pensionifond", ignore_case = TRUE), ""))
+  str_squish(str_replace_all(nimi, regex("pensionifond", ignore_case = TRUE), ""))
+}
+
+normaliseeri_fondi_voti <- function(nimi) {
+  nimi %>%
+    puhasta_fondinimi() %>%
+    str_to_lower() %>%
+    str_replace_all("väljumine piiratud", "") %>%
+    str_replace_all("samba", "") %>%
+    str_replace_all("iii", "") %>%
+    str_replace_all("jätkusuutlik", "") %>%
+    str_replace_all("kliimatuleviku", "") %>%
+    str_replace_all("[^[:alnum:]+]", "") %>%
+    str_squish()
 }
 
 # Leiab viimase kuupäeva, kus kõigil fondidel on andmed
@@ -72,31 +85,89 @@ leia_taispaev <- function(df, fondi_veerg = "Lühinimi") {
     pull(Kuupäev) %>%
     max(na.rm = TRUE)
 }
+
+upsert_ajaloo_read <- function(vanad_andmed, uued_andmed, keys) {
+  if (nrow(vanad_andmed) == 0) {
+    return(uued_andmed)
+  }
+
+  vanad_andmed %>%
+    anti_join(select(uued_andmed, all_of(keys)), by = keys) %>%
+    bind_rows(uued_andmed) %>%
+    arrange(!!!rlang::syms(keys))
+}
+
+liida_indeksiinfo <- function(andmed, lookup) {
+  lookup_clean <- lookup %>%
+    transmute(
+      fond = puhasta_fondinimi(fond),
+      indeks = ifelse(is.na(indeks), "", indeks),
+      fondi_voti = normaliseeri_fondi_voti(fond)
+    ) %>%
+    distinct(fondi_voti, .keep_all = TRUE)
+
+  andmed %>%
+    mutate(fondi_voti = normaliseeri_fondi_voti(Lühinimi)) %>%
+    left_join(
+      lookup_clean %>% transmute(fondi_voti, indeks_lookup = indeks, lookup_match = TRUE),
+      by = "fondi_voti"
+    ) %>%
+    mutate(
+      indeks = ifelse(is.na(indeks_lookup), "", indeks_lookup),
+      lookup_match = ifelse(is.na(lookup_match), FALSE, lookup_match)
+    ) %>%
+    select(-indeks_lookup, -fondi_voti)
+}
 ```
 
 
 ```{r fondid_online}
-# Määrame fondid ja nende ID-d käsitsi, et vältida veebilehe vigadest tulenevaid probleeme.
-# ID-d pärinevad Pensionikeskuse süsteemist.
-
-fondid <- data.frame(
-  id = c("78", "47", "48", "82",    # LHV
-         "77", "50", "51",          # Swedbank
-         "79", "44",                # SEB
-         "76", "75",                # Luminor
-         "80"),                     # Tuleva
-  fond = c("LHV III Indeks", "LHV III Täiendav", "LHV III XL", "LHV III Roheline",
-           "Swedbank III V100 Indeks", "Swedbank III V30", "Swedbank III V60",
-           "SEB III Tulevik Indeks", "SEB III Aktiivne",
-           "Luminor III Jätkusuutlik", "Luminor III Aktsiad 100",
-           "Tuleva III"),
-  indeks = c("x", "", "", "",       # Märgime indeksfondid (x)
-             "x", "", "",
-             "x", "",
-             "x", "",
-             "x"),
+# Hardcoded fallback, kui dünaamiliselt uuendatud fondiloend puudub.
+fallback_fondid <- data.frame(
+  id = c("55", "72", "87", "53", "41", "93", "43", "34",
+         "90", "89", "33", "79", "42", "84", "32", "85", "81"),
+  fond = c(
+    "LHV Pensionifond Aktiivne III",
+    "LHV Pensionifond Indeks III",
+    "Luminor Jätkusuutlik Tulevik 50-55 Indeks Pensionifond",
+    "Luminor Tulevik 16-50 Pensionifond",
+    "Luminor Tulevik 55+ Pensionifond",
+    "Luminor Tulevik Indeks Pensionifond",
+    "SEB III samba pensionifond 18+",
+    "SEB III samba pensionifond 65+",
+    "SEB kliimatuleviku pensionifond indeks",
+    "Swedbank III Samba Pensionifond Indeks",
+    "Swedbank Pensionifond V100",
+    "Swedbank Pensionifond V100 indeks (väljumine piiratud)",
+    "Swedbank Pensionifond V30",
+    "Swedbank Pensionifond V30 indeks (väljumine piiratud)",
+    "Swedbank Pensionifond V60",
+    "Swedbank Pensionifond V60 indeks (väljumine piiratud)",
+    "Tuleva III Samba Pensionifond"
+  ),
+  indeks = c("", "x", "x", "", "", "x", "", "",
+             "x", "x", "", "x", "", "x", "", "x", ""),
   stringsAsFactors = FALSE
 )
+
+# Eelistame fetch_iii_sammas_fondid.R loodud nimekirja, kuid jätame käsitsi kontrollitud fallback'i alles.
+fondid <- tryCatch({
+  kandidaat <- read_csv("Pensionifondid_III.csv", show_col_types = FALSE) %>%
+    transmute(
+      id = as.character(id),
+      fond = puhasta_fondinimi(fond),
+      indeks = ifelse(is.na(indeks), "", indeks)
+    )
+
+  if (nrow(kandidaat) < 5) {
+    stop("fondiloendis on liiga vähe ridu")
+  }
+
+  kandidaat
+}, error = function(e) {
+  message("Kasutan III samba fallback-fondiloendit: ", e$message)
+  fallback_fondid
+})
 
 # Jätame meelde ka fund_info, et ülejäänud kood katki ei läheks
 fund_info <- fondid %>% rename(ID = id, Title = fond)
@@ -259,13 +330,42 @@ raw_osakuomanikud <- lae_osakuomanikud()
 if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
 
   # Puhastame fondide nimed ja ühendame indeksi info fondid tabelist
-  fondid_info <- raw_maht %>%
+  raw_maht_puhas <- raw_maht %>%
     mutate(
       Fond = puhasta_fondinimi(Fond),
       Lühinimi = puhasta_fondinimi(Lühinimi)
-    ) %>%
-    left_join(fondid %>% select(fond, indeks), by = c("Lühinimi" = "fond")) %>%
-    mutate(indeks = ifelse(is.na(indeks), "", indeks))
+    )
+
+  fondid_info <- liida_indeksiinfo(raw_maht_puhas, fondid)
+
+  if (any(!fondid_info$lookup_match)) {
+    message("CSV-põhine fondiloend ei katnud kõiki fonde, proovin fallback-vastendusi.")
+
+    fallback_info <- liida_indeksiinfo(raw_maht_puhas, fallback_fondid) %>%
+      transmute(
+        Kuupäev,
+        Lühinimi,
+        fallback_indeks = indeks,
+        fallback_lookup_match = lookup_match
+      )
+
+    fondid_info <- fondid_info %>%
+      left_join(fallback_info, by = c("Kuupäev", "Lühinimi")) %>%
+      mutate(
+        indeks = ifelse(!lookup_match & fallback_lookup_match, fallback_indeks, indeks),
+        lookup_match = lookup_match | fallback_lookup_match
+      ) %>%
+      select(-fallback_indeks, -fallback_lookup_match)
+  }
+
+  if (any(!fondid_info$lookup_match)) {
+    message(
+      "Hoiatus: indeksimärgistus jäi leidmata fondidele: ",
+      paste(sort(unique(fondid_info$Lühinimi[!fondid_info$lookup_match])), collapse = ", ")
+    )
+  }
+
+  fondid_info <- fondid_info %>% select(-lookup_match)
 
   # Lisame osakuomanike (kontode) arvu viimase kuupäeva kohta
   # Pensionikeskus avaldab seda ainult värskeima seisu kohta, nii et
@@ -308,25 +408,12 @@ if(!is.null(raw_maht) && nrow(raw_maht) > 0) {
       vanad_andmed <- vanad_andmed %>% mutate(indeks = "")
     }
 
-    # Leia uued read (kuupäevad + fondid, mida ei ole veel CSV-s)
-    uued_read <- fondid_info %>%
-      anti_join(vanad_andmed, by = c("Kuupäev", "Lühinimi"))
+    kokku <- upsert_ajaloo_read(vanad_andmed, fondid_info, c("Kuupäev", "Lühinimi"))
+    write_csv(kokku, csv_ajalugu)
+    message("✓ III samba ajaloo fail sünkroniseeritud: ", nrow(fondid_info), " värsket rida töödeldud")
 
-    if(nrow(uued_read) > 0) {
-      # Lisa uued read ja salvesta
-      kokku <- bind_rows(vanad_andmed, uued_read) %>%
-        arrange(Kuupäev)
-      write_csv(kokku, csv_ajalugu)
-      message("✓ Lisatud ", nrow(uued_read), " uut rida ajaloo faili (",
-              length(unique(uued_read$Kuupäev)), " uut kuupäeva)")
-
-      # Kasutame täielikku andmestikku graafikute jaoks
-      fondid_info <- kokku
-    } else {
-      message("ℹ Uusi andmeid ei ole, CSV juba ajakohane")
-      # Kasutame täielikku andmestikku graafikute jaoks
-      fondid_info <- vanad_andmed
-    }
+    # Kasutame täielikku andmestikku graafikute jaoks
+    fondid_info <- kokku
   } else {
     # Kui CSV ei eksisteeri, salvesta kõik andmed
     write_csv(fondid_info, csv_ajalugu)
@@ -373,20 +460,9 @@ if(!is.null(raw_osakuomanikud) && nrow(raw_osakuomanikud) > 0) {
     # Kui CSV eksisteerib, loeme sisse ja lisame uued andmed
     vanad_investorid <- read_csv(csv_investorid_ajalugu, show_col_types = FALSE)
 
-    # Kontrollime, kas täna kuupäev juba eksisteerib
-    uued_investorid <- tanamased_investorid %>%
-      anti_join(vanad_investorid, by = c("Kuupäev", "Fond"))
-
-    if(nrow(uued_investorid) > 0) {
-      # Lisa uued read ja salvesta
-      kokku_investorid <- bind_rows(vanad_investorid, uued_investorid) %>%
-        arrange(Kuupäev, Fond)
-      write_csv(kokku_investorid, csv_investorid_ajalugu)
-      message("✓ Lisatud ", nrow(uued_investorid), " uut rida investorite ajaloo faili (",
-              length(unique(uued_investorid$Fond)), " fondi)")
-    } else {
-      message("ℹ Investorite andmed juba ajakohased")
-    }
+    kokku_investorid <- upsert_ajaloo_read(vanad_investorid, tanamased_investorid, c("Kuupäev", "Fond"))
+    write_csv(kokku_investorid, csv_investorid_ajalugu)
+    message("✓ Investorite ajaloo fail sünkroniseeritud: ", nrow(tanamased_investorid), " värsket rida töödeldud")
   } else {
     # Kui CSV ei eksisteeri, salvesta kõik andmed
     write_csv(tanamased_investorid, csv_investorid_ajalugu)
@@ -804,4 +880,3 @@ if(nrow(fondid_info) > 0) {
 
 - Pensionikontode arv: [Pensionikeskus III sammas](https://www.pensionikeskus.ee/statistika/iii-sammas/pensionikontode-arv/)
 - Fondide maht: [Pensionikeskus III sammas](https://www.pensionikeskus.ee/statistika/iii-sammas/taiendava-kogumispensioni-fondide-maht/)
-
