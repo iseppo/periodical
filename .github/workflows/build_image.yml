@@ -1,4 +1,4 @@
-# .github/workflows/docker-build.yml
+# .github/workflows/build_image.yml
 name: Build and Push Docker Image
 
 on:
@@ -8,7 +8,7 @@ on:
     paths:
       - 'Dockerfile'
       - 'renv.lock'
-      - '.github/workflows/docker-build.yml' # Käivitub ka iseenda muutmisel
+      - '.github/workflows/build_image.yml' # Käivitub ka iseenda muutmisel
   workflow_dispatch: {} # Võimaldab manuaalset käivitamist
 
 env:
