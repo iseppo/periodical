@@ -69,6 +69,8 @@ iii_sammas_investorid_ajalugu.csv
 iii_sammas_koguturg.csv
 iii_sammas_top_fondid.csv
 turuylevaade_files/
+# GitHub Pages koostekaust (luuakse CI-s)
+_site/
 # OMC plugin tööfailid
 .omc/
 .positai

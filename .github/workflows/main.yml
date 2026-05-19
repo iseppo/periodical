@@ -12,6 +12,10 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
     - name: Checkout code
@@ -61,6 +65,44 @@ jobs:
 
             echo '--- Done ---'
           "
+
+    # --- GitHub Pages: avaldame raportid (tuleva juurena, teised failinimega) ---
+    - name: Assemble GitHub Pages site
+      id: site
+      if: always()
+      shell: bash
+      run: |
+        set -uo pipefail
+        # Raportid on self-contained HTML-id. tuleva avaldatakse saidi
+        # juurena (index.html), turuylevaade ja III_sammas failinimega.
+        mkdir -p _site
+        [ -f tuleva.html ]       && cp tuleva.html       _site/index.html       || echo "::warning::tuleva.html puudub"
+        [ -f turuylevaade.html ] && cp turuylevaade.html _site/turuylevaade.html || echo "::warning::turuylevaade.html puudub"
+        [ -f III_sammas.html ]   && cp III_sammas.html   _site/III_sammas.html   || echo "::warning::III_sammas.html puudub"
+        if [ -f _site/index.html ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          ls -la _site
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "::warning::tuleva.html puudub — GitHub Pages jääb eelmisesse seisu"
+        fi
+
+    - name: Setup Pages
+      if: ${{ always() && steps.site.outputs.ready == 'true' }}
+      uses: actions/configure-pages@v5
+      with:
+        enablement: true
+
+    - name: Upload Pages artifact
+      if: ${{ always() && steps.site.outputs.ready == 'true' }}
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: _site
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      if: ${{ always() && steps.site.outputs.ready == 'true' }}
+      uses: actions/deploy-pages@v4
 
     - name: Stop SSH agent
       if: always()
