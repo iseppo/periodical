@@ -1,43 +1,57 @@
 # Lae vajalikud teegid
 library(ssh)
 
-run_command <- function(command, args = character(), error_label = command) {
-  status <- system2(command, args = args)
+# Käivitab käsu ja tagastab TRUE/FALSE selle õnnestumise kohta.
+# Tõrketaluv: ei peata pipeline'i, et üks ebaõnnestunud samm ei blokeeriks teisi.
+try_command <- function(command, args = character(), error_label = command) {
+  status <- tryCatch(
+    system2(command, args = args),
+    error = function(e) {
+      message("VIGA: ", error_label, " viskas erindi: ", conditionMessage(e))
+      1L
+    }
+  )
   if (status != 0) {
-    stop(error_label, " ebaõnnestus (kood: ", status, ")", call. = FALSE)
+    message(
+      "HOIATUS: ", error_label, " ebaõnnestus (kood: ", status,
+      "), jätkan järgmiste sammudega."
+    )
+    return(FALSE)
   }
+  message("OK: ", error_label)
+  TRUE
 }
 
-require_existing_files <- function(files, label) {
+warn_if_missing <- function(files, label) {
   missing_files <- files[!file.exists(files)]
   if (length(missing_files) > 0) {
-    stop(
-      label,
-      " jaoks puuduvad vajalikud failid: ",
-      paste(missing_files, collapse = ", "),
-      call. = FALSE
+    message(
+      "HOIATUS: ", label, " — puuduvad failid: ",
+      paste(missing_files, collapse = ", ")
     )
   }
+  invisible(missing_files)
 }
 
-require_fresh_files <- function(files, label, earliest_time) {
+warn_if_stale <- function(files, label, earliest_time) {
   stale_files <- files[
     !file.exists(files) |
       vapply(
         files,
-        function(path) file.info(path)$mtime < earliest_time,
+        function(path) file.exists(path) && file.info(path)$mtime < earliest_time,
         logical(1)
       )
   ]
 
   if (length(stale_files) > 0) {
-    stop(
-      label,
-      " jaoks puuduvad värsked failid: ",
+    message(
+      "HOIATUS: ", label,
+      " — järgmised failid pole selle jooksu ajal uuenenud: ",
       paste(stale_files, collapse = ", "),
-      call. = FALSE
+      " (laen üles olemasolevad versioonid)."
     )
   }
+  invisible(stale_files)
 }
 
 is_fresh_file <- function(path, earliest_time) {
@@ -76,21 +90,32 @@ upload_with_structure <- function(session, local_dir, remote_dir) {
 
 pipeline_start <- Sys.time()
 
-# 1. Käivita kogu R-skript. See genereerib kõik vajalikud failid.
+# Kogume sammude tulemused kokku. Iga samm käivitub sõltumata sellest, kas
+# eelmine õnnestus — nii ei blokeeri üks ebaõnnestunud raport teisi ega
+# üleslaadimist. Kui midagi läks valesti, lõpetame veakoodiga, aga alles
+# PÄRAST üleslaadimist (vt skripti lõpp).
+samm_tulemused <- logical(0)
+
+# 1. Käivita kogu R-skript. See genereerib graafikud ja animatsiooni.
 message("Käivitan NAV_kasv.R skripti failide genereerimiseks...")
-run_command("Rscript", "NAV_kasv.R", error_label = "NAV_kasv.R")
+samm_tulemused["NAV_kasv.R"] <-
+  try_command("Rscript", "NAV_kasv.R", error_label = "NAV_kasv.R")
 
 # 2. Tõmbame III samba fondide nimekirja
 message("Tõmban III samba fondide nimekirja...")
-run_command("Rscript", "fetch_iii_sammas_fondid.R", error_label = "fetch_iii_sammas_fondid.R")
+samm_tulemused["fetch_iii_sammas_fondid.R"] <-
+  try_command("Rscript", "fetch_iii_sammas_fondid.R", error_label = "fetch_iii_sammas_fondid.R")
 
-# 3. Käivita Quarto renderdamised
+# 3. Käivita Quarto renderdamised (iga raport eraldi, üksteisest sõltumatult)
 message("Renderdan Quarto faile...")
-run_command("quarto", c("render", "turuylevaade.qmd"), error_label = "turuylevaade.qmd renderdamine")
-run_command("quarto", c("render", "tuleva.qmd"), error_label = "tuleva.qmd renderdamine")
-run_command("quarto", c("render", "III_sammas.qmd"), error_label = "III_sammas.qmd renderdamine")
+samm_tulemused["turuylevaade.qmd"] <-
+  try_command("quarto", c("render", "turuylevaade.qmd"), error_label = "turuylevaade.qmd renderdamine")
+samm_tulemused["tuleva.qmd"] <-
+  try_command("quarto", c("render", "tuleva.qmd"), error_label = "tuleva.qmd renderdamine")
+samm_tulemused["III_sammas.qmd"] <-
+  try_command("quarto", c("render", "III_sammas.qmd"), error_label = "III_sammas.qmd renderdamine")
 
-require_fresh_files(
+warn_if_stale(
   c(
     "aastane_tulu_tuleva_lhv.png",
     "kihlvedu.png",
@@ -107,7 +132,7 @@ require_fresh_files(
   pipeline_start
 )
 
-require_existing_files(
+warn_if_missing(
   c(
     "aastane_tulu_animeeritud.mp4"
   ),
@@ -197,3 +222,17 @@ tryCatch({
     message("SSH ühendus suletud.")
   }
 })
+
+# Kui mõni genereerimise/renderdamise samm ebaõnnestus, lõpetame veakoodiga,
+# et CI märgiks jooksu punaseks. See toimub alles pärast üleslaadimist, nii et
+# õnnestunud raportid jõuavad ikkagi serverisse.
+if (any(!samm_tulemused)) {
+  ebaõnnestunud <- names(samm_tulemused)[!samm_tulemused]
+  stop(
+    "Pipeline lõpetatud, kuid järgmised sammud ebaõnnestusid: ",
+    paste(ebaõnnestunud, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+message("Pipeline edukalt lõpetatud — kõik sammud õnnestusid.")
