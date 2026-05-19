@@ -1,14 +1,15 @@
 # Alustame Rocker Projecti pildist, mis on spetsiaalselt loodud Positi binaaridega töötamiseks.
-FROM rocker/r-ver:4.5.2
+# r-ver:4.6.0 baseerub Ubuntu 24.04 (noble) peal (varasem 4.5.2 oli Debian bookworm).
+FROM rocker/r-ver:4.6.0
 
 # Seadistame ajavööndi ja väldime interaktiivseid dialooge.
 ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Paigaldame kõik vajalikud süsteemi sõltuvused.
-# Muudame Rocker pildi traditsioonilist sources.list faili, et lisada 'contrib' ja 'non-free'.
-RUN sed -i 's/main$/main contrib non-free/g' /etc/apt/sources.list && \
-    apt-get update && \
+# Ubuntu 24.04 (noble) baaspildil on 'multiverse' komponent juba vaikimisi lubatud,
+# nii et ttf-mscorefonts-installer paigaldub ilma apt-allikate muutmata.
+RUN apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
     apt-get install -y --no-install-recommends \
     curl \
@@ -47,7 +48,7 @@ COPY renv.lock .
 RUN R -e "install.packages('renv')"
 
 # Taastame R-i paketid. Rocker pildid on juba seadistatud kasutama Positi binaarset repositooriumi.
-RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/bookworm/latest')); renv::restore()"
+RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')); renv::restore()"
 
 # Registreerime hrbrthemes fondid R-is.
 RUN R -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"

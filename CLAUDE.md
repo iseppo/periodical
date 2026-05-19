@@ -28,7 +28,7 @@ periodical/
 ├── III_sammas.qmd          # III pillar market overview (Quarto)
 ├── Pensionifondid.csv      # II pillar fund list with IDs
 ├── Pensionifondid_III.csv  # III pillar fund list with IDs
-├── Dockerfile              # Container environment (R 4.5.2, Quarto 1.8.26)
+├── Dockerfile              # Container environment (R 4.6.0 / Ubuntu noble, Quarto 1.9.37)
 ├── renv.lock               # R package dependencies (renv lockfile)
 ├── .github/workflows/
 │   ├── main.yml            # Daily scheduled run (11:05 UTC)
@@ -278,7 +278,7 @@ Check:
 
 ### System Dependencies
 
-- R >= 4.3
+- R 4.6 (renv.lock is pinned to 4.6.0)
 - Quarto >= 1.4
 - ffmpeg (for video encoding)
 - SSH client (for uploads)
