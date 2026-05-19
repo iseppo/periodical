@@ -52,6 +52,9 @@ theme_transparent <- theme(
 )
 
 knitr::opts_chunk$set(dev.args = list(bg = "transparent"))
+
+# Eesti kümnenderaldaja (CI lülitab .Rprofile välja, seega seame siin)
+options(OutDec = ",")
 ```
 
 ```{r}

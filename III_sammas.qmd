@@ -43,6 +43,8 @@ library(tibble)
 from_day <- "2017-05-02"
 yesterday <- as.character(today() - days(1))
 options(scipen = 999)
+# Eesti kümnenderaldaja (CI lülitab .Rprofile välja, seega seame siin)
+options(OutDec = ",")
 
 # Baasvärvid graafikutele (ühtne palett kogu dokumendis)
 BAASVÄRVID <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300",
