@@ -43,6 +43,11 @@ is_ci <- nzchar(Sys.getenv("CI"))
 worker_count <- if (is_ci) available_cores else max(2, available_cores - 1)
 plan(multisession, workers = worker_count)
 
+# Eesti kümnenderaldaja kõikjal, kus arve vormindatakse. Varem oli see
+# .Rprofile'is, kuid CI lülitab .Rprofile välja — seepärast siin, et väljund
+# oleks local ja CI vahel ühtne.
+options(OutDec = ",")
+
 #-------------------------------------------------------------------------------
 # 2. ABIFUNKTSIOONID
 #-------------------------------------------------------------------------------
@@ -88,11 +93,19 @@ is_cache_valid <- function(cache_file, max_age_hours = 1) {
 #' @return Data frame fondide NAV väärtustega
 get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cache = TRUE) {
   cache_file <- "cache_nav_data.rds"
+  cache_range <- c(as.character(start_date), as.character(end_date))
 
-  # Kontrollime cache'i
+  # Kontrollime cache'i. NB: cache kehtib ainult sama kuupäevavahemiku kohta —
+  # vahemik salvestatakse koos andmetega, et erinevate parameetritega kutsed
+  # ei saaks tagasi vale vahemiku andmeid.
   if (use_cache && is_cache_valid(cache_file)) {
-    message("Laen NAV andmeid cache'ist (optimeerimine)...")
-    return(readRDS(cache_file))
+    cached <- tryCatch(readRDS(cache_file), error = function(e) NULL)
+    if (is.list(cached) && !is.null(cached$data) &&
+        identical(cached$range, cache_range)) {
+      message("Laen NAV andmeid cache'ist (optimeerimine)...")
+      return(cached$data)
+    }
+    message("Cache'i kuupäevavahemik ei kattu — laen värsked andmed.")
   }
 
   message("Laen fondide andmeid Pensionikeskusest...")
@@ -137,9 +150,9 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
       Kuupäev = dmy(Kuupäev)
     )
 
-  # Salvestame cache'i
+  # Salvestame cache'i koos kuupäevavahemikuga
   if (use_cache) {
-    saveRDS(navid, cache_file)
+    saveRDS(list(data = navid, range = cache_range), cache_file)
     message("NAV andmed salvestatud cache'i")
   }
 
@@ -568,7 +581,6 @@ create_specific_animation <- function(animeeritud_andmed_raw,
   anim_fps <- 15  
   anim_pause_sec <- 10
   dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
-  end_pause_frames <- anim_pause_sec * anim_fps
   
   # Kuupäeva sildid animatsiooni jaoks
   date_labels <- tibble(
@@ -639,17 +651,17 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     renderer  = ffmpeg_renderer(options = list(pix_fmt = 'yuv420p', vcodec = 'libx264', preset = 'fast')),
     overwrite = TRUE,
     nframes   = dynamic_nframes,
-    fps       = anim_fps,
-    end_pause = end_pause_frames
+    fps       = anim_fps
   )
   
-  message("Lisame 10-sekundilise lõpufiltri: ", mp4_input, " -> ", mp4_output)
-  # Lisame 10 sekundit lõppu (optimeeritud kiirema kodeerimisega)
+  message("Lisame ", anim_pause_sec, "-sekundilise lõpupausi: ", mp4_input, " -> ", mp4_output)
+  # Lõpupausi lisab AINULT see ffmpeg samm. anim_save'i end_pause on tahtlikult
+  # eemaldatud, et vältida topeltpausi (varem 10 s + 10 s = 20 s seisvat kaadrit).
   exit_code <- system(paste(
     "ffmpeg",
     "-y",
     "-i", shQuote(mp4_input),
-    "-vf", "tpad=stop_mode=clone:stop_duration=10",
+    "-vf", paste0("tpad=stop_mode=clone:stop_duration=", anim_pause_sec),
     "-c:v libx264", # Video kodek
     "-preset fast", # Kiirem kodeerimine
     "-crf 23",      # Hea kvaliteet/kiiruse suhe
