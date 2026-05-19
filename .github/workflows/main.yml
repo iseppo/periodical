@@ -10,7 +10,7 @@ jobs:
   run-analysis:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
       pages: write
     environment:
@@ -103,6 +103,36 @@ jobs:
       id: deployment
       if: ${{ always() && steps.site.outputs.ready == 'true' }}
       uses: actions/deploy-pages@v4
+
+    # --- Heartbeat: hoiab ajastatud töövoo elus ---
+    # GitHub keelab ajastatud (schedule) töövood, kui repos pole 60 päeva
+    # olnud ühtegi commiti. Kirjutame iga ~30 päeva tagant heartbeat.txt'i
+    # tänase kuupäeva ja commitime — nii on repo tegevuseaeg alati värske
+    # ja töövoog jääb ajastusse alles. GITHUB_TOKEN'iga tehtud commit
+    # uuendab pushed_at ajatemplit, kuid ei käivita uusi töövoogusid
+    # (rekursiooni pole karta).
+    - name: Heartbeat commit
+      if: always()
+      shell: bash
+      run: |
+        set -uo pipefail
+        viimane_epoch=0
+        if [ -f heartbeat.txt ]; then
+          viimane=$(head -n1 heartbeat.txt | tr -dc '0-9-')
+          viimane_epoch=$(date -u -d "$viimane" +%s 2>/dev/null || echo 0)
+        fi
+        vanus_paevades=$(( ( $(date -u +%s) - viimane_epoch ) / 86400 ))
+        if [ "$vanus_paevades" -lt 30 ]; then
+          echo "Heartbeat on $vanus_paevades päeva vana — uut commiti pole vaja."
+          exit 0
+        fi
+        echo "Heartbeat on $vanus_paevades päeva vana — uuendan."
+        date -u +"%Y-%m-%d" > heartbeat.txt
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add heartbeat.txt
+        git commit -m "chore: heartbeat $(date -u +%Y-%m-%d)"
+        git push
 
     - name: Stop SSH agent
       if: always()
