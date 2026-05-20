@@ -577,10 +577,16 @@ create_specific_animation <- function(animeeritud_andmed_raw,
       )
     )
   
-  # Animatsiooni parameetrid (optimeeritud kiiremaks kodeerimiseks)
-  anim_fps <- 15  
+  # Animatsiooni parameetrid.
+  # 30 fps + anim_sek_kuupaeval=0.5 annab ~50 sek animatsiooni sujuvalt 30
+  # fps juures — sama kaadrite arvuga kui varasem 15 fps + 1 sek/kuupäev
+  # (100 sek). Kodeerimise koormus on sama mis varem; video on 2× lühem ja
+  # märgatavalt sujuvam.
+  anim_fps <- 30
   anim_pause_sec <- 10
-  dynamic_nframes <- (length(kaadrite_kuupaevad) - 1) * anim_fps * 1
+  # Mitu sekundit on ühe kuupäeva üleminek järgmisele.
+  anim_sek_kuupaeval <- 0.5
+  dynamic_nframes <- as.integer(round((length(kaadrite_kuupaevad) - 1) * anim_fps * anim_sek_kuupaeval))
   
   # Kuupäeva sildid animatsiooni jaoks
   date_labels <- tibble(
