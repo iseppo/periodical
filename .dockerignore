@@ -1,0 +1,73 @@
+# .dockerignore — välistame ehituskontekstist failid, mida pildis pole vaja.
+# Eesmärgid: pilt jääb väiksemaks, COPY . . ei vea kaasa ehitaja masina
+# state'i (eriti renv/library/ sümlinkid osutaks pildis katki olevatele
+# cache-radadele) ega lokaalseid render-artefakte.
+
+# Git-ajalugu — pildis tarbetu.
+.git/
+.gitignore
+.gitattributes
+
+# renv'i lokaalsed artefaktid. Image taastab paketid renv.lock'ist; lokaalse
+# masina renv/library/ on sümlinkidega ehitaja renv cache'ile, mis sees ei
+# eksisteeri.
+renv/library/
+renv/staging/
+renv/local/
+renv/python/
+
+# RStudio ja R-sessiooni state.
+.Rproj.user/
+.Rhistory
+.RData
+.RDataTmp
+.Ruserdata
+*.Rproj
+.Renviron
+
+# CI-töövoogusid kasutab GitHub Actions, mitte pildi runtime.
+.github/
+
+# AI / tööriista töökataloogid.
+.omc/
+.positai/
+
+# GitHub Pages koostekaust (luuakse CI-s).
+_site/
+
+# CI-runtime'is ümbernimetatud varukoopiad.
+.Rprofile.bak
+renv.bak/
+
+# Tekitatud Quarto raportid ja nende vahekaustad (regenereeritakse runtime'is).
+tuleva.html
+turuylevaade.html
+III_sammas.html
+tuleva_files/
+turuylevaade_files/
+
+# Tekitatud meedia (regenereeritakse runtime'is).
+aastane_tulu_*.mp4
+aastane_tulu_*.gif
+aastane_tulu_*.png
+aastane_tulu_tuleva_lhv.RData
+inflatsioonpalk.png
+kihlvedu.png
+osakaal.png
+raha_kasv_*.png
+teine_sammas_*.png
+tulevaturuosa*.png
+
+# Tekitatud CSV-d (regenereeritakse runtime'is).
+indeksfondide_turuosa.csv
+koguturg_*.csv
+iii_sammas_*.csv
+Pensionifondid_III.csv
+
+# Cache failid.
+cache_*.rds
+*_cache/
+cache/
+
+# Vanad andmefailid.
+Tootlus_kuni_01.11.2023.xlsx

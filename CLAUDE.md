@@ -265,6 +265,10 @@ Check:
 | `koguturg_*.csv` | turuylevaade.qmd | tuleva/ |
 | `iii_sammas_*.csv` | III_sammas.qmd | tuleva/ |
 
+The three Quarto-rendered HTML reports are also mirrored to GitHub Pages by
+`main.yml`: `tuleva.html` is served as the site root (`index.html`); the
+other two keep their filenames. Site: <https://iseppo.github.io/periodical/>
+
 ## Dependencies
 
 ### R Packages (Key)

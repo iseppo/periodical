@@ -6,6 +6,12 @@ on:
     - cron: '5 11 * * *'
   workflow_dispatch: {}
 
+# Sunnib Node 24 kõikidele JS-põhistele actionidele (GitHub eemaldab Node 20
+# 16. sept 2026; sunnib selle vaikimisi 2. juunist 2026). Saame eemaldada,
+# kui Pages-actionide uuemad versioonid jõuavad natiivselt Node 24 peale.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   run-analysis:
     runs-on: ubuntu-latest
