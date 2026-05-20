@@ -79,12 +79,22 @@ jobs:
       shell: bash
       run: |
         set -uo pipefail
-        # Raportid on self-contained HTML-id. tuleva avaldatakse saidi
-        # juurena (index.html), turuylevaade ja III_sammas failinimega.
+        # turuylevaade ja III_sammas on self-contained HTML-id. tuleva.qmd
+        # on self-contained: false, seega viitab tuleva.html kõrval olevatele
+        # ressurssidele suhteliste URL-idega (tuleva_files/ kaust libs+chart
+        # PNG-dega, tuleva-style.css, video + poster, screenshotid, kihlvedu).
+        # Kopeerime kõik need _site'i kõrvale, et Pages versioon töötaks.
         mkdir -p _site
         [ -f tuleva.html ]       && cp tuleva.html       _site/index.html       || echo "::warning::tuleva.html puudub"
         [ -f turuylevaade.html ] && cp turuylevaade.html _site/turuylevaade.html || echo "::warning::turuylevaade.html puudub"
         [ -f III_sammas.html ]   && cp III_sammas.html   _site/III_sammas.html   || echo "::warning::III_sammas.html puudub"
+        # tuleva kõrvalressursid (vajalikud, sest tuleva.qmd ei ole
+        # self-contained).
+        [ -d tuleva_files ] && cp -r tuleva_files _site/ || true
+        for f in tuleva-style.css aastane_tulu_animeeritud.mp4 aastane_tulu_tuleva_lhv.png \
+                 ekspress_screenshot.png fb_screenshot.png kihlvedu.png; do
+          [ -f "$f" ] && cp "$f" _site/ || echo "::warning::tuleva kõrvalfail $f puudub"
+        done
         if [ -f _site/index.html ]; then
           echo "ready=true" >> "$GITHUB_OUTPUT"
           ls -la _site
