@@ -161,25 +161,28 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
 
 #' Laeb inflatsiooni andmed Statistikaametist
 #' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
+#' RESILIENTSUS: 3 katset 15 s timeoutiga; kui kõik kolm ebaõnnestuvad,
+#' kasutame `cache_inflation_raw.rds`'i (kui see eksisteerib). Statistika-
+#' ametil on aeg-ajalt lühikesi katkestusi GitHub Actions runneri Azure-
+#' westus võrgu poolt, ja kuna inflatsiooni andmed uuenevad ainult kord
+#' kuus, on päevavana cache funktsionaalselt sama mis värske päring.
 #'
 #' @param start_year Algusaasta (vaikimisi 2017)
-#' @param use_cache Kas kasutada cache'i (vaikimisi FALSE)
+#' @param use_cache Kas kasutada töödeldud cache'i (vaikimisi FALSE)
 #' @param raw Kui TRUE, tagastab toorandmed (date, indeks veerud) animatsiooni jaoks
 #' @return Data frame inflatsiooni andmetega
 get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE) {
-  cache_file <- "cache_inflation_data.rds"
+  cache_file     <- "cache_inflation_data.rds"
+  raw_cache_file <- "cache_inflation_raw.rds"
 
-  # Kontrollime cache'i (ainult töödeldud andmete jaoks)
+  # Kontrollime töödeldud cache'i (ainult kui kutsuja eksplitsiitselt soovib)
   if (use_cache && !raw && is_cache_valid(cache_file)) {
     message("Laen inflatsiooni andmeid cache'ist (optimeerimine)...")
     return(readRDS(cache_file))
   }
 
-  message("Laen inflatsiooni andmeid Statistikaametist...")
-
   url <- "https://andmed.stat.ee/api/v1/et/stat/IA002"
 
-  # Koostame päringu
   query_body <- list(
     query = list(
       list(
@@ -190,29 +193,61 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
     response = list(format = "csv2")
   )
 
-  # Teeme päringu
-  response <- POST(
-    url,
-    body = toJSON(query_body, auto_unbox = TRUE),
-    add_headers("Content-Type" = "application/json")
-  )
+  # Toorandmete päring 3 katsega ja 15 s timeoutiga. Tagastab töödeldud
+  # `df`-i õnnestumise korral, NULL kui kõik katsed ebaõnnestuvad.
+  fetch_raw_inflation <- function() {
+    for (katse in 1:3) {
+      message(sprintf("Laen inflatsiooni andmeid Statistikaametist (katse %d/3)...", katse))
+      resp <- tryCatch(
+        POST(
+          url,
+          body = toJSON(query_body, auto_unbox = TRUE),
+          add_headers("Content-Type" = "application/json"),
+          timeout(15)
+        ),
+        error = function(e) {
+          message(sprintf("Katse %d ebaõnnestus: %s", katse, conditionMessage(e)))
+          NULL
+        }
+      )
+      if (!is.null(resp) && status_code(resp) == 200) {
+        csv_data <- content(resp, "text", encoding = "UTF-8")
+        df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
+          rename(indeks = `IA002: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
+          mutate(
+            indeks = as.numeric(indeks),
+            kuu = as.integer(MONTH_LOOKUP[Kuu]),
+            date = as.Date(paste(Aasta, kuu, "01", sep = "-"))
+          ) %>%
+          arrange(date) %>%
+          filter(
+            date > dmy("01-03-2017"),
+            !is.na(indeks)
+          )
+        # Salvestame toorandmed alati — odav, kasutame edaspidi varuna.
+        saveRDS(df, raw_cache_file)
+        return(df)
+      }
+      if (katse < 3) Sys.sleep(10)
+    }
+    NULL
+  }
 
-  # Loeme vastuse
-  csv_data <- content(response, "text", encoding = "UTF-8")
+  df <- fetch_raw_inflation()
 
-  # Töötleme andmed
-  df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
-    rename(indeks = `IA002: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
-    mutate(
-      indeks = as.numeric(indeks),
-      kuu = as.integer(MONTH_LOOKUP[Kuu]),
-      date = as.Date(paste(Aasta, kuu, "01", sep = "-"))
-    ) %>%
-    arrange(date) %>%
-    filter(
-      date > dmy("01-03-2017"),
-      !is.na(indeks)
-    )
+  if (is.null(df)) {
+    if (file.exists(raw_cache_file)) {
+      vanus_h <- as.numeric(difftime(Sys.time(),
+        file.info(raw_cache_file)$mtime, units = "hours"))
+      message(sprintf(
+        "HOIATUS: Statistikaamet ei vastanud 3 katsel — kasutan %.1f h vana toorcache'i (inflatsioon uueneb kuus, seega see on okei).",
+        vanus_h
+      ))
+      df <- readRDS(raw_cache_file)
+    } else {
+      stop("Statistikaamet ei vastanud 3 katsel ja cache_inflation_raw.rds puudub — ei suuda inflatsiooni andmeid laadida.")
+    }
+  }
 
   # Kui soovitakse toorandmeid (animatsiooni jaoks), tagastame siit
   if (raw) {
