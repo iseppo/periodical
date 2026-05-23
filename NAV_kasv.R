@@ -159,13 +159,56 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
   return(navid)
 }
 
+#' Loeb ja valideerib inflatsiooni toorcache'i (`cache_inflation_raw.rds`).
+#' Kutsutakse ainult siis, kui Statistikaamet on kättesaamatu — toorcache
+#' on persistitud GitHub Actions cache kaudu, nii et restauratud fail võib
+#' olla mistahes vanusega või isegi rikutud (vale skeem, tühi, eelmine
+#' versioon). Kontrollime kõike, mida me eeldame, ja kukume valju veaga,
+#' kui midagi ei klapi — parem clean fail kui vaikselt vananenud andmed.
+#'
+#' Kontrollid: fail eksisteerib, on loetav RDS, on data.frame, sisaldab
+#' nõutud veerge `date` + `indeks`, pole tühi, ei ole vanem kui
+#' `max_age_days`. Vaikimisi 45 päeva — inflatsioon uueneb Statistika-
+#' ametis kord kuus, 45 päeva katab ühe avaldamise pluss puhvri tarne
+#' hilinemise korral.
+#'
+#' @param path Toorcache failitee
+#' @param max_age_days Lubatud max vanus päevades (vaikimisi 45)
+#' @return Valideeritud data.frame veergudega vähemalt `date` ja `indeks`
+read_raw_cache <- function(path, max_age_days = 45) {
+  if (!file.exists(path)) {
+    stop(sprintf("toorcache puudub: %s", path), call. = FALSE)
+  }
+  age_days <- as.numeric(difftime(Sys.time(),
+    file.info(path)$mtime, units = "days"))
+  if (is.na(age_days) || age_days > max_age_days) {
+    stop(sprintf(
+      "toorcache on %.1f päeva vana (lubatud max %d) — käsitsi sekkumine vajalik.",
+      age_days, max_age_days
+    ), call. = FALSE)
+  }
+  df <- tryCatch(
+    readRDS(path),
+    error = function(e) stop(sprintf(
+      "toorcache'i ei suuda lugeda: %s", conditionMessage(e)
+    ), call. = FALSE)
+  )
+  if (!is.data.frame(df) || nrow(df) == 0 ||
+      !all(c("date", "indeks") %in% names(df))) {
+    stop("toorcache'i sisu pole oodatud kujul (vaja data.frame veergudega date + indeks).",
+      call. = FALSE)
+  }
+  df
+}
+
 #' Laeb inflatsiooni andmed Statistikaametist
 #' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
 #' RESILIENTSUS: 3 katset 15 s timeoutiga; kui kõik kolm ebaõnnestuvad,
-#' kasutame `cache_inflation_raw.rds`'i (kui see eksisteerib). Statistika-
-#' ametil on aeg-ajalt lühikesi katkestusi GitHub Actions runneri Azure-
-#' westus võrgu poolt, ja kuna inflatsiooni andmed uuenevad ainult kord
-#' kuus, on päevavana cache funktsionaalselt sama mis värske päring.
+#' kasutame `cache_inflation_raw.rds`'i (valideeritakse [read_raw_cache]'i
+#' kaudu). Statistikaametil on aeg-ajalt lühikesi katkestusi GitHub
+#' Actions runneri Azure-westus võrgu poolt, ja kuna inflatsiooni andmed
+#' uuenevad ainult kord kuus, on päevavana cache funktsionaalselt sama
+#' mis värske päring.
 #'
 #' @param start_year Algusaasta (vaikimisi 2017)
 #' @param use_cache Kas kasutada töödeldud cache'i (vaikimisi FALSE)
@@ -193,24 +236,28 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
     response = list(format = "csv2")
   )
 
-  # Toorandmete päring 3 katsega ja 15 s timeoutiga. Tagastab töödeldud
-  # `df`-i õnnestumise korral, NULL kui kõik katsed ebaõnnestuvad.
+  # Toorandmete päring 3 katsega ja 15 s timeoutiga. Iga katse on
+  # atomaarne: kogu plokk (HTTP + status check + parse + valideerimine +
+  # saveRDS) on tryCatch'i sees, nii et ükskõik milline samm võib
+  # ebaõnnestuda ja loop jätkab järgmise katsega. NULL = kõik katsed
+  # ebaõnnestusid.
   fetch_raw_inflation <- function() {
     for (katse in 1:3) {
       message(sprintf("Laen inflatsiooni andmeid Statistikaametist (katse %d/3)...", katse))
-      resp <- tryCatch(
-        POST(
+      attempt <- tryCatch({
+        resp <- POST(
           url,
           body = toJSON(query_body, auto_unbox = TRUE),
           add_headers("Content-Type" = "application/json"),
           timeout(15)
-        ),
-        error = function(e) {
-          message(sprintf("Katse %d ebaõnnestus: %s", katse, conditionMessage(e)))
-          NULL
+        )
+        if (status_code(resp) != 200) {
+          body_snippet <- substr(
+            content(resp, "text", encoding = "UTF-8"), 1, 200
+          )
+          stop(sprintf("HTTP %d: %s",
+            status_code(resp), body_snippet), call. = FALSE)
         }
-      )
-      if (!is.null(resp) && status_code(resp) == 200) {
         csv_data <- content(resp, "text", encoding = "UTF-8")
         df <- read.csv(text = csv_data, header = TRUE, check.names = FALSE) %>%
           rename(indeks = `IA002: TARBIJAHINNAINDEKS, 1997 = 100`) %>%
@@ -224,10 +271,20 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
             date > dmy("01-03-2017"),
             !is.na(indeks)
           )
-        # Salvestame toorandmed alati — odav, kasutame edaspidi varuna.
+        if (!is.data.frame(df) || nrow(df) == 0 ||
+            !all(c("date", "indeks") %in% names(df))) {
+          stop("vastus ei sisalda oodatud veerge või on tühi.", call. = FALSE)
+        }
+        # Salvestame toorandmed alles pärast valideerimist, et persistitud
+        # cache poleks kunagi rikutud.
         saveRDS(df, raw_cache_file)
-        return(df)
-      }
+        df
+      }, error = function(e) {
+        message(sprintf("Katse %d ebaõnnestus: %s",
+          katse, conditionMessage(e)))
+        NULL
+      })
+      if (!is.null(attempt)) return(attempt)
       if (katse < 3) Sys.sleep(10)
     }
     NULL
@@ -236,17 +293,21 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
   df <- fetch_raw_inflation()
 
   if (is.null(df)) {
-    if (file.exists(raw_cache_file)) {
+    df <- tryCatch({
+      cached <- read_raw_cache(raw_cache_file)
       vanus_h <- as.numeric(difftime(Sys.time(),
         file.info(raw_cache_file)$mtime, units = "hours"))
       message(sprintf(
         "HOIATUS: Statistikaamet ei vastanud 3 katsel — kasutan %.1f h vana toorcache'i (inflatsioon uueneb kuus, seega see on okei).",
         vanus_h
       ))
-      df <- readRDS(raw_cache_file)
-    } else {
-      stop("Statistikaamet ei vastanud 3 katsel ja cache_inflation_raw.rds puudub — ei suuda inflatsiooni andmeid laadida.")
-    }
+      cached
+    }, error = function(e) {
+      stop(sprintf(
+        "Statistikaamet ei vastanud 3 katsel ja toorcache pole kasutuskõlbulik: %s",
+        conditionMessage(e)
+      ), call. = FALSE)
+    })
   }
 
   # Kui soovitakse toorandmeid (animatsiooni jaoks), tagastame siit
