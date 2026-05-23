@@ -19,7 +19,6 @@ jobs:
       contents: write
       id-token: write
       pages: write
-      actions: write   # actions/cache@v4: salvestamiseks vajalik
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -67,8 +66,12 @@ jobs:
             echo "ssh-keyscan õnnestus katsel $attempt ($(wc -l < "$tmp_keys") rida)."
             exit 0
           fi
-          echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit — proovin uuesti..."
-          sleep 10
+          if [ "$attempt" -lt 3 ]; then
+            echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit — proovin uuesti..."
+            sleep 10
+          else
+            echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit."
+          fi
         done
         echo "::error::ssh-keyscan ebaõnnestus 3 korda — server pole kättesaadav."
         exit 1
@@ -84,9 +87,11 @@ jobs:
       uses: actions/cache@v4
       with:
         path: cache_inflation_raw.rds
-        key: inflation-raw-${{ github.run_id }}
+        # v1 prefiks võimaldab edaspidi cache'i invalideerida ühe versiooni-
+        # bumbiga, kui RDS-i skeem muutub (nt veerunimed read_raw_cache'is).
+        key: inflation-raw-v1-${{ github.run_id }}
         restore-keys: |
-          inflation-raw-
+          inflation-raw-v1-
 
     - name: Run Analysis and Upload in Docker
       run: |
