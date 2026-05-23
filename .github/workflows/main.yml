@@ -47,8 +47,30 @@ jobs:
           echo "SSH_AGENT_PID=$SSH_AGENT_PID"
         } >> "$GITHUB_ENV"
 
+    # ssh-keyscan võib tabada hetkelist võrgukatkestust runneri (Azure)
+    # ja seppo.ai vahel — vaikimisi 5 s timeout ja üks katse löövad
+    # terve pipeline'i maha. Proovime 3 korda, 15 s timeoutiga, 10 s
+    # vahedega; õnnestumiseks loeme, kas saime vähemalt ühe host key rea.
     - name: Add server fingerprint
-      run: ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+      shell: bash
+      env:
+        SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      run: |
+        set -uo pipefail
+        tmp_keys="$RUNNER_TEMP/keyscan.out"
+        for attempt in 1 2 3; do
+          : > "$tmp_keys"
+          ssh-keyscan -T 15 -H "$SERVER_HOST" > "$tmp_keys" 2>/dev/null || true
+          if [ -s "$tmp_keys" ]; then
+            cat "$tmp_keys" >> ~/.ssh/known_hosts
+            echo "ssh-keyscan õnnestus katsel $attempt ($(wc -l < "$tmp_keys") rida)."
+            exit 0
+          fi
+          echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit — proovin uuesti..."
+          sleep 10
+        done
+        echo "::error::ssh-keyscan ebaõnnestus 3 korda — server pole kättesaadav."
+        exit 1
 
     - name: Run Analysis and Upload in Docker
       run: |
