@@ -19,6 +19,7 @@ jobs:
       contents: write
       id-token: write
       pages: write
+      actions: write   # actions/cache@v4: salvestamiseks vajalik
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -71,6 +72,21 @@ jobs:
         done
         echo "::error::ssh-keyscan ebaõnnestus 3 korda — server pole kättesaadav."
         exit 1
+
+    # Statistikaameti inflatsiooni toorcache — väike (~paar KB) RDS fail,
+    # mille NAV_kasv.R kirjutab iga eduka päringu järel ja millest see
+    # loeb juhul, kui andmed.stat.ee on 3 katsel kättesaamatu (vt
+    # get_inflation_data NAV_kasv.R-is). Iga päevane run salvestab uue
+    # snapshot'i unikaalse võtmega; restore-keys "inflation-raw-" toob
+    # tagasi värskeima olemasoleva. GitHub kustutab kasutamata cache'i
+    # pärast 7 päeva, nii et puhastust pole vaja.
+    - name: Restore inflation raw cache
+      uses: actions/cache@v4
+      with:
+        path: cache_inflation_raw.rds
+        key: inflation-raw-${{ github.run_id }}
+        restore-keys: |
+          inflation-raw-
 
     - name: Run Analysis and Upload in Docker
       run: |
