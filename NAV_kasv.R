@@ -71,6 +71,32 @@ FUND_COLORS <- c(
 # 3. ANDMETE HANKIMISE FUNKTSIOONID
 #-------------------------------------------------------------------------------
 
+#' Salvestab R objekti RDS-i atomaarselt — kirjutab esmalt tempfile'i
+#' samasse kataloogi (et `file.rename` oleks atomaarne sama filesystemi
+#' sees), seejärel nimetab ümber. See väldib torn-faile, kui kaks
+#' samaaegset `future({...})` worker'it kirjutavad sama cache'i samal
+#' ajal (toorcache'i kirjutame iga eduka fetch'i järel `get_nav_data`'is
+#' ja `get_inflation_data`'is — neid kutsutakse igas main()'is mitu korda
+#' paralleelsete future'ite seest).
+#'
+#' @param obj Objekt mida salvestada
+#' @param path Sihtfaili tee
+save_atomic_rds <- function(obj, path) {
+  tmp <- paste0(path, ".tmp.", Sys.getpid())
+  saveRDS(obj, tmp)
+  if (!file.rename(tmp, path)) {
+    # file.rename võib mõnel platvormil ebaõnnestuda, kui sihtfail
+    # eksisteerib — sel juhul kustutame ja proovime uuesti.
+    if (file.exists(path)) file.remove(path)
+    if (!file.rename(tmp, path)) {
+      file.remove(tmp)
+      stop(sprintf("save_atomic_rds: ei suuda ümber nimetada %s -> %s",
+        tmp, path), call. = FALSE)
+    }
+  }
+  invisible(path)
+}
+
 #' Kontrollib cache'i kehtivust
 #' @param cache_file Cache faili asukoht
 #' @param max_age_hours Maksimaalne vanus tundides (vaikimisi 1)
@@ -193,11 +219,23 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
     for (katse in 1:3) {
       message(sprintf("Laen fondide andmeid Pensionikeskusest (katse %d/3)...", katse))
       attempt <- tryCatch({
-        navid_raw <- read.delim(
-          url,
-          fileEncoding = "UTF-16",
-          header = TRUE,
-          dec = ","
+        # withCallingHandlers escaleerib read.delim'i hoiatused — UTF-16
+        # dekooderil on harjumus mitte-UTF-16 vastusele (nt HTML 500
+        # leht) anda WARN ja tagastada osaliselt rikutud frame, mille
+        # me alles allpool downstream'is select()'iga avastaksime.
+        # Skoop on ainult read.delim — tidyverse'i pivot/filter võivad
+        # endiselt vabalt hoiataid omadelpõhjustel.
+        navid_raw <- withCallingHandlers(
+          read.delim(
+            url,
+            fileEncoding = "UTF-16",
+            header = TRUE,
+            dec = ","
+          ),
+          warning = function(w) stop(
+            sprintf("read.delim hoiatus: %s", conditionMessage(w)),
+            call. = FALSE
+          )
         )
         navid <- navid_raw %>%
           select(Kuupäev, Fond, NAV) %>%
@@ -216,8 +254,9 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
           stop("vastus ei sisalda oodatud veerge või on tühi.", call. = FALSE)
         }
         # Salvestame toorandmed alles pärast valideerimist, et persistitud
-        # cache poleks kunagi rikutud.
-        saveRDS(navid, raw_cache_file)
+        # cache poleks kunagi rikutud. Atomic write hoiab ära torn-faili
+        # ka siis, kui kaks paralleelset future'i kirjutavad samaaegselt.
+        save_atomic_rds(navid, raw_cache_file)
         navid
       }, error = function(e) {
         message(sprintf("Katse %d ebaõnnestus: %s",
@@ -252,7 +291,7 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
 
   # Salvestame cache'i koos kuupäevavahemikuga
   if (use_cache) {
-    saveRDS(list(data = navid, range = cache_range), cache_file)
+    save_atomic_rds(list(data = navid, range = cache_range), cache_file)
     message("NAV andmed salvestatud cache'i")
   }
 
@@ -376,8 +415,8 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
           stop("vastus ei sisalda oodatud veerge või on tühi.", call. = FALSE)
         }
         # Salvestame toorandmed alles pärast valideerimist, et persistitud
-        # cache poleks kunagi rikutud.
-        saveRDS(df, raw_cache_file)
+        # cache poleks kunagi rikutud. Atomic write hoiab ära torn-faili.
+        save_atomic_rds(df, raw_cache_file)
         df
       }, error = function(e) {
         message(sprintf("Katse %d ebaõnnestus: %s",
@@ -433,7 +472,7 @@ get_inflation_data <- function(start_year = 2017, use_cache = FALSE, raw = FALSE
 
   # Salvestame cache'i
   if (use_cache) {
-    saveRDS(inflation, cache_file)
+    save_atomic_rds(inflation, cache_file)
     message("Inflatsiooni andmed salvestatud cache'i")
   }
 
