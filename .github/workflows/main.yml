@@ -6,11 +6,7 @@ on:
     - cron: '5 11 * * *'
   workflow_dispatch: {}
 
-# Sunnib Node 24 kõikidele JS-põhistele actionidele (GitHub eemaldab Node 20
-# 2026. aasta sügisel; sunnib selle vaikimisi 16. juunist 2026). Saame eemaldada,
-# kui Pages-actionide uuemad versioonid jõuavad natiivselt Node 24 peale.
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   ANALYSIS_IMAGE: ghcr.io/iseppo/periodical:main@sha256:7060dc9ca38f711d5ae7509c8a299ff2b077f9c693d2af9ebaecc70c82f23008
 
 jobs:
@@ -179,7 +175,7 @@ jobs:
 
     - name: Setup Pages
       if: ${{ always() && steps.site.outputs.ready == 'true' }}
-      uses: actions/configure-pages@v5
+      uses: actions/configure-pages@v6
       with:
         enablement: true
 
@@ -209,7 +205,7 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       if: ${{ always() && steps.site.outputs.ready == 'true' }}
-      uses: actions/deploy-pages@v4
+      uses: actions/deploy-pages@v5
 
     # --- Heartbeat: hoiab ajastatud töövoo elus ---
     # GitHub keelab ajastatud (schedule) töövood, kui repos pole 60 päeva
