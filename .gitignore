@@ -60,6 +60,7 @@ tuleva_files/
 inflatsioonpalk.png
 # Cache files for performance optimization
 cache_nav_data.rds
+cache_nav_raw.rds
 cache_inflation_data.rds
 cache_inflation_raw.rds
 # Runtime-generated III samba fondiloend; repo keeps a stable seed snapshot under data/

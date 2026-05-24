@@ -93,6 +93,18 @@ jobs:
         restore-keys: |
           inflation-raw-v1-
 
+    # Pensionikeskuse NAV toorcache — sama muster kui inflatsiooni cache'iga,
+    # eraldi võtmega et skeemi muutused saaksid invalideerida ainult ühte
+    # või teist (vt read_nav_raw_cache NAV_kasv.R-is). NAV avaldatakse iga
+    # tööpäev — sellega seoses on R-poolne max vanus 7 päeva, mitte 45.
+    - name: Restore NAV raw cache
+      uses: actions/cache@v4
+      with:
+        path: cache_nav_raw.rds
+        key: nav-raw-v1-${{ github.run_id }}
+        restore-keys: |
+          nav-raw-v1-
+
     - name: Run Analysis and Upload in Docker
       run: |
         docker run --rm \

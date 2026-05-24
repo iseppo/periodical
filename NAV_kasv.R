@@ -84,16 +84,66 @@ is_cache_valid <- function(cache_file, max_age_hours = 1) {
   return(file_age_hours < max_age_hours)
 }
 
+#' Loeb ja valideerib NAV toorcache'i (`cache_nav_raw.rds`). Sama loogika
+#' kui [read_raw_cache]'is, aga NAV-spetsiifilise skeemiga (wide data.frame
+#' veerus `Kuupäev` ja vähemalt 2 fondi veergu, sh kohustuslikud Tuleva +
+#' II samba üldindeks) ja lühema max-vanusega: Pensionikeskus avaldab NAV
+#' andmeid iga tööpäev, nii et 7 päeva katab nädalalõpud ja paar puhver-
+#' päeva, aga mitte multi-nädalat vananemist (mis tähendaks, et raport
+#' näitaks "viimaseid andmeid" tegelikult eelmisest kuust).
+#'
+#' @param path Toorcache failitee
+#' @param max_age_days Lubatud max vanus päevades (vaikimisi 7)
+#' @return Valideeritud wide data.frame veerus `Kuupäev` + fondide NAV-id
+read_nav_raw_cache <- function(path, max_age_days = 7) {
+  if (!file.exists(path)) {
+    stop(sprintf("toorcache puudub: %s", path), call. = FALSE)
+  }
+  age_days <- as.numeric(difftime(Sys.time(),
+    file.info(path)$mtime, units = "days"))
+  if (is.na(age_days) || age_days > max_age_days) {
+    stop(sprintf(
+      "toorcache on %.1f päeva vana (lubatud max %d) — käsitsi sekkumine vajalik.",
+      age_days, max_age_days
+    ), call. = FALSE)
+  }
+  df <- tryCatch(
+    readRDS(path),
+    error = function(e) stop(sprintf(
+      "toorcache'i ei suuda lugeda: %s", conditionMessage(e)
+    ), call. = FALSE)
+  )
+  expected_funds <- c(
+    "Tuleva Maailma Aktsiate Pensionifond",
+    "II samba üldindeks"
+  )
+  if (!is.data.frame(df) || nrow(df) == 0 ||
+      !"Kuupäev" %in% names(df) ||
+      !all(expected_funds %in% names(df))) {
+    stop("toorcache'i sisu pole oodatud kujul (vaja wide data.frame veerus Kuupäev + Tuleva + II samba üldindeks).",
+      call. = FALSE)
+  }
+  df
+}
+
 #' Laeb NAV (Net Asset Value) andmed Pensionikeskusest
 #' OPTIMEERITUD: kasutab cache'i vältimaks tarbetuid API kutseid
+#' RESILIENTSUS: 3 katset 30 s timeoutiga; kui kõik kolm ebaõnnestuvad,
+#' kasutame `cache_nav_raw.rds`'i (valideeritakse [read_nav_raw_cache]'i
+#' kaudu). Sama muster kui [get_inflation_data]'is — Pensionikeskuse
+#' poole minev fail võib transiti hetkeks katkeda Azure-westus võrgu
+#' poolelt, ja NAV ajalugu liigub väga aeglaselt (uued read iga tööpäev),
+#' nii et päevavana cache annab raporti kätte, lihtsalt viimased paar
+#' päeva on värskeimast veidi puudu.
 #'
 #' @param start_date Alguskuupäev (vaikimisi 2017-03-28)
 #' @param end_date Lõppkuupäev (vaikimisi tänane)
 #' @param use_cache Kas kasutada cache'i (vaikimisi TRUE)
 #' @return Data frame fondide NAV väärtustega
 get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cache = TRUE) {
-  cache_file <- "cache_nav_data.rds"
-  cache_range <- c(as.character(start_date), as.character(end_date))
+  cache_file     <- "cache_nav_data.rds"
+  raw_cache_file <- "cache_nav_raw.rds"
+  cache_range    <- c(as.character(start_date), as.character(end_date))
 
   # Kontrollime cache'i. NB: cache kehtib ainult sama kuupäevavahemiku kohta —
   # vahemik salvestatakse koos andmetega, et erinevate parameetritega kutsed
@@ -108,11 +158,9 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
     message("Cache'i kuupäevavahemik ei kattu — laen värsked andmed.")
   }
 
-  message("Laen fondide andmeid Pensionikeskusest...")
-
   # Koostame URL-i koos fondide ID-dega
   base_url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/"
-  
+
   params <- list(
     download = "xls",
     date_from = start_date,
@@ -123,32 +171,84 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
     `f[3]` = "EPI", # II samba üldindeks
     `f[4]` = "73"   # LHV Pensionifond Indeks
   )
-  
+
   # Koostame täieliku URL-i
   url <- paste0(base_url, "?", paste0(names(params), "=", params, collapse = "&"))
-  
-  # Loeme andmed
-  navid_raw <- read.delim(
-    url,
-    fileEncoding = "UTF-16",
-    header = TRUE,
-    dec = ","
-  )
-  
-  # Töötleme andmed õigesse formaati
-  navid <- navid_raw %>%
-    select(Kuupäev, Fond, NAV) %>%
-    pivot_wider(
-      names_from = Fond,
-      values_from = NAV
-    ) %>%
-    filter(
-      !is.na(`Tuleva Maailma Aktsiate Pensionifond`),
-      !is.na(`II samba üldindeks`)
-    ) %>%
-    mutate(
-      Kuupäev = dmy(Kuupäev)
+
+  # Päring 3 katsega, 30 s per-katse timeoutiga (read.delim avab url() kaudu
+  # libcurl-i, mis austab options(timeout = N)). Iga katse on atomaarne:
+  # download + parse + pivot + valideerimine + raw cache save — kõik tryCatch
+  # plokis, nii et ükskõik milline samm ebaõnnestub, järgmine katse jätkab.
+  # NULL = kõik 3 katset ebaõnnestusid.
+  fetch_raw_nav <- function() {
+    vana_timeout <- getOption("timeout")
+    options(timeout = 30)
+    on.exit(options(timeout = vana_timeout), add = TRUE)
+
+    expected_funds <- c(
+      "Tuleva Maailma Aktsiate Pensionifond",
+      "II samba üldindeks"
     )
+
+    for (katse in 1:3) {
+      message(sprintf("Laen fondide andmeid Pensionikeskusest (katse %d/3)...", katse))
+      attempt <- tryCatch({
+        navid_raw <- read.delim(
+          url,
+          fileEncoding = "UTF-16",
+          header = TRUE,
+          dec = ","
+        )
+        navid <- navid_raw %>%
+          select(Kuupäev, Fond, NAV) %>%
+          pivot_wider(
+            names_from = Fond,
+            values_from = NAV
+          ) %>%
+          filter(
+            !is.na(`Tuleva Maailma Aktsiate Pensionifond`),
+            !is.na(`II samba üldindeks`)
+          ) %>%
+          mutate(Kuupäev = dmy(Kuupäev))
+        if (!is.data.frame(navid) || nrow(navid) == 0 ||
+            !"Kuupäev" %in% names(navid) ||
+            !all(expected_funds %in% names(navid))) {
+          stop("vastus ei sisalda oodatud veerge või on tühi.", call. = FALSE)
+        }
+        # Salvestame toorandmed alles pärast valideerimist, et persistitud
+        # cache poleks kunagi rikutud.
+        saveRDS(navid, raw_cache_file)
+        navid
+      }, error = function(e) {
+        message(sprintf("Katse %d ebaõnnestus: %s",
+          katse, conditionMessage(e)))
+        NULL
+      })
+      if (!is.null(attempt)) return(attempt)
+      if (katse < 3) Sys.sleep(10)
+    }
+    NULL
+  }
+
+  navid <- fetch_raw_nav()
+
+  if (is.null(navid)) {
+    navid <- tryCatch({
+      cached <- read_nav_raw_cache(raw_cache_file)
+      vanus_h <- as.numeric(difftime(Sys.time(),
+        file.info(raw_cache_file)$mtime, units = "hours"))
+      message(sprintf(
+        "HOIATUS: Pensionikeskus ei vastanud 3 katsel — kasutan %.1f h vana toorcache'i (raporti viimased päevad on värskeimast veidi puudu).",
+        vanus_h
+      ))
+      cached
+    }, error = function(e) {
+      stop(sprintf(
+        "Pensionikeskus ei vastanud 3 katsel ja toorcache pole kasutuskõlbulik: %s",
+        conditionMessage(e)
+      ), call. = FALSE)
+    })
+  }
 
   # Salvestame cache'i koos kuupäevavahemikuga
   if (use_cache) {
