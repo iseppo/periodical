@@ -119,9 +119,14 @@ is_cache_valid <- function(cache_file, max_age_hours = 1) {
 #' näitaks "viimaseid andmeid" tegelikult eelmisest kuust).
 #'
 #' @param path Toorcache failitee
-#' @param max_age_days Lubatud max vanus päevades (vaikimisi 7)
+#' @param max_age_days Lubatud max FAILI vanus päevades (vaikimisi 7)
+#' @param max_data_age_days Lubatud max andme-kuupäeva vanus päevades
+#'   (vaikimisi 14) — eraldi `max_age_days`'st, et tabada juhtum kus
+#'   fail on mtime-vana 7 päeva sees, aga viimane rida sees on kuid
+#'   vana (nt Pensionikeskuse migratsioon võis fetch'i õnnestumise
+#'   illusiooni anda, aga andmeid mitte uuendada)
 #' @return Valideeritud wide data.frame veerus `Kuupäev` + fondide NAV-id
-read_nav_raw_cache <- function(path, max_age_days = 7) {
+read_nav_raw_cache <- function(path, max_age_days = 7, max_data_age_days = 14) {
   if (!file.exists(path)) {
     stop(sprintf("toorcache puudub: %s", path), call. = FALSE)
   }
@@ -148,6 +153,20 @@ read_nav_raw_cache <- function(path, max_age_days = 7) {
       !all(expected_funds %in% names(df))) {
     stop("toorcache'i sisu pole oodatud kujul (vaja wide data.frame veerus Kuupäev + Tuleva + II samba üldindeks).",
       call. = FALSE)
+  }
+  # Andme-vanuse kontroll: faili mtime võib olla värske, aga andmed sees
+  # kuid vanad. Mõõdame viimase Kuupäev'i järgi.
+  max_kp <- suppressWarnings(max(df$Kuupäev, na.rm = TRUE))
+  if (!inherits(max_kp, "Date") || is.na(max_kp)) {
+    stop("toorcache: Kuupäev veerg ei sisalda valiidseid kuupäevi.",
+      call. = FALSE)
+  }
+  data_age_days <- as.numeric(difftime(Sys.time(), max_kp, units = "days"))
+  if (data_age_days > max_data_age_days) {
+    stop(sprintf(
+      "toorcache: viimane andme-kuupäev on %.1f päeva vana (lubatud max %d) — andmed on liiga vananenud.",
+      data_age_days, max_data_age_days
+    ), call. = FALSE)
   }
   df
 }
@@ -181,7 +200,31 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
       message("Laen NAV andmeid cache'ist (optimeerimine)...")
       return(cached$data)
     }
-    message("Cache'i kuupäevavahemik ei kattu — laen värsked andmed.")
+    message("Cache'i kuupäevavahemik ei kattu — proovin toorcache'i.")
+  }
+
+  # Lühike ring: kui range-matched optimization cache ei klappinud aga
+  # toorcache on värske (< 60 min), kasutame seda ka teise võrgupäringu
+  # asemel. main()'is kutsutakse get_nav_data()'i kaks korda (line ~699
+  # ja ~892); ilma selleta lähevad need outage'i ajal mõlemad läbi 3 ×
+  # 30 s retry tsükli, raiskame 3 minutit. Eelduseks on, et mõlemad
+  # kutsed käivad ~sama range'iga (default + main()'i lopp_kp on
+  # praktikas mõlemad today()).
+  if (use_cache && file.exists(raw_cache_file)) {
+    raw_age_min <- as.numeric(difftime(Sys.time(),
+      file.info(raw_cache_file)$mtime, units = "mins"))
+    if (raw_age_min < 60) {
+      cached_raw <- tryCatch(read_nav_raw_cache(raw_cache_file),
+        error = function(e) NULL)
+      if (!is.null(cached_raw)) {
+        message(sprintf(
+          "Loen NAV andmeid värskest toorcache'ist (%.0f min vana — säästab teist võrgupäringut).",
+          raw_age_min
+        ))
+        save_atomic_rds(list(data = cached_raw, range = cache_range), cache_file)
+        return(cached_raw)
+      }
+    }
   }
 
   # Koostame URL-i koos fondide ID-dega
@@ -252,6 +295,15 @@ get_nav_data <- function(start_date = "2017-03-28", end_date = today(), use_cach
             !"Kuupäev" %in% names(navid) ||
             !all(expected_funds %in% names(navid))) {
           stop("vastus ei sisalda oodatud veerge või on tühi.", call. = FALSE)
+        }
+        # dmy() tagastab NA-i parseerimata kuupäevade kohta vaikselt
+        # (ainult hoiatusega). Kui Pensionikeskus muudab kunagi
+        # kuupäevaformaati (nt ISO-le), oleks kogu Kuupäev veerg NA-d
+        # ja allpool tootluse arvutus klapuks vaikselt valele tulemusele.
+        # Ainsa "validate-before-save" lubaduse järgi kontrollime siin.
+        if (!inherits(navid$Kuupäev, "Date") || all(is.na(navid$Kuupäev))) {
+          stop("Kuupäev veerg ei sisalda valiidseid kuupäevi (formaadi muutus?).",
+            call. = FALSE)
         }
         # Salvestame toorandmed alles pärast valideerimist, et persistitud
         # cache poleks kunagi rikutud. Atomic write hoiab ära torn-faili
