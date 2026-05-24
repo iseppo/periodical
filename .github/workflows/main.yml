@@ -105,6 +105,24 @@ jobs:
         restore-keys: |
           nav-raw-v1-
 
+    # Tee toorcache'i staatus logist nähtavaks — kui outage päev tuleb
+    # ja R-pool kaebab "toorcache puudub", on selge kohe siit, kas:
+    #   (a) cache evicti läbi (7p inaktiivsust), või
+    #   (b) skeemi-bumb jättis prefiksi sobimatuks, või
+    #   (c) tegu ongi esimese run'iga peale deploy'i.
+    # ::warning'iga eemaldatud cache on tabletop'is kohe näha.
+    - name: Show raw cache status
+      if: always()
+      shell: bash
+      run: |
+        for f in cache_inflation_raw.rds cache_nav_raw.rds; do
+          if [ -f "$f" ]; then
+            echo "$f olemas: $(stat -c%s "$f") baiti, mtime $(date -r "$f" -u +%FT%TZ)"
+          else
+            echo "::warning::$f puudub — outage fallback selle runi jaoks ei tööta"
+          fi
+        done
+
     - name: Run Analysis and Upload in Docker
       run: |
         docker run --rm \
