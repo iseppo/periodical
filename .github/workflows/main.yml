@@ -7,10 +7,11 @@ on:
   workflow_dispatch: {}
 
 # Sunnib Node 24 kõikidele JS-põhistele actionidele (GitHub eemaldab Node 20
-# 16. sept 2026; sunnib selle vaikimisi 2. juunist 2026). Saame eemaldada,
+# 2026. aasta sügisel; sunnib selle vaikimisi 16. juunist 2026). Saame eemaldada,
 # kui Pages-actionide uuemad versioonid jõuavad natiivselt Node 24 peale.
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  ANALYSIS_IMAGE: ghcr.io/iseppo/periodical:main@sha256:7060dc9ca38f711d5ae7509c8a299ff2b077f9c693d2af9ebaecc70c82f23008
 
 jobs:
   run-analysis:
@@ -84,7 +85,7 @@ jobs:
     # tagasi värskeima olemasoleva. GitHub kustutab kasutamata cache'i
     # pärast 7 päeva, nii et puhastust pole vaja.
     - name: Restore inflation raw cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: cache_inflation_raw.rds
         # v1 prefiks võimaldab edaspidi cache'i invalideerida ühe versiooni-
@@ -98,7 +99,7 @@ jobs:
     # või teist (vt read_nav_raw_cache NAV_kasv.R-is). NAV avaldatakse iga
     # tööpäev — sellega seoses on R-poolne max vanus 7 päeva, mitte 45.
     - name: Restore NAV raw cache
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: cache_nav_raw.rds
         key: nav-raw-v1-${{ github.run_id }}
@@ -131,7 +132,7 @@ jobs:
           --volume ~/.ssh:/root/.ssh:ro \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
-          ghcr.io/iseppo/periodical:main \
+          "${{ env.ANALYSIS_IMAGE }}" \
           bash -c "
             set -euo pipefail
 
@@ -182,11 +183,28 @@ jobs:
       with:
         enablement: true
 
+    - name: Archive Pages artifact
+      if: ${{ always() && steps.site.outputs.ready == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        tar \
+          --dereference \
+          --hard-dereference \
+          --directory _site \
+          -cvf "$RUNNER_TEMP/artifact.tar" \
+          --exclude=.git \
+          --exclude=.github \
+          .
+
     - name: Upload Pages artifact
       if: ${{ always() && steps.site.outputs.ready == 'true' }}
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-artifact@v7
       with:
-        path: _site
+        name: github-pages
+        path: ${{ runner.temp }}/artifact.tar
+        retention-days: 1
+        if-no-files-found: error
 
     - name: Deploy to GitHub Pages
       id: deployment

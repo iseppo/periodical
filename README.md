@@ -27,7 +27,7 @@ Skript käivitab kogu pipeline'i: koostab graafikud, uuendab III samba sisendand
 
 ## GitHub Actions
 
-Kataloogis `.github/workflows/main.yml` on töövoog, mis käivitab kanonilise `run_turuylevaade.R` skripti iga päev kell 11:05 UTC.
+Kataloogis `.github/workflows/main.yml` on töövoog, mis käivitab kanonilise `run_turuylevaade.R` skripti iga päev kell 11:05 UTC. Tallinna ajas tähendab see talveajal 13:05 ja suveajal 14:05.
 
 
 ## Dockeriga käivitamine
