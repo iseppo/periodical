@@ -63,6 +63,8 @@ cache_nav_data.rds
 cache_nav_raw.rds
 cache_inflation_data.rds
 cache_inflation_raw.rds
+# Serveri host key cache (CI taastab/uuendab; vt main.yml fingerprint samm)
+known_hosts_seppo
 # Runtime-generated III samba fondiloend; repo keeps a stable seed snapshot under data/
 Pensionifondid_III.csv
 III_sammas.html

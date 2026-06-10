@@ -44,34 +44,71 @@ jobs:
           echo "SSH_AGENT_PID=$SSH_AGENT_PID"
         } >> "$GITHUB_ENV"
 
-    # ssh-keyscan võib tabada hetkelist võrgukatkestust runneri (Azure)
-    # ja seppo.ai vahel — vaikimisi 5 s timeout ja üks katse löövad
-    # terve pipeline'i maha. Proovime 3 korda, 15 s timeoutiga, 10 s
-    # vahedega; õnnestumiseks loeme, kas saime vähemalt ühe host key rea.
+    # Serveri host key "pin": kord edukalt skännitud sõrmejälg cache'itakse ja
+    # taaskasutatakse iga päev. Stabiilne võti (mitte run_id-põhine) annab
+    # write-once semantika — esimene jooks loob, järgnevad saavad täpse cache-
+    # tabamuse ega kirjuta üle. Nii ei sõltu üleslaadimine enam igapäevasest
+    # ssh-keyscan'ist (mis tabab vahel Azure→Eesti hetkekatkestust). Rotatsioon:
+    # kui seppo.ai host key päriselt vahetub, ebaõnnestub SCP valjult host-key
+    # kontrollil — siis bumbi võti known-hosts-v1 -> v2 (sama invalideerimis-
+    # muster kui NAV/inflatsiooni cache'iga).
+    - name: Restore server fingerprint cache
+      uses: actions/cache@v5
+      with:
+        path: known_hosts_seppo
+        key: known-hosts-v1
+
+    # Veendu, et seppo.ai host key on ~/.ssh/known_hosts'is, et hilisem SCP
+    # (run_turuylevaade.R sees) saaks serverit verifitseerida.
+    #
+    # TÄHTIS: see samm EI lõpeta pipeline'i veaga. Analüüs, Quarto-raportid ja
+    # GitHub Pages avaldamine EI sõltu upload-serverist — seppo.ai on vajalik
+    # ainult lõpus toimuva SCP jaoks. Varem lõi keyscan'i exit 1 maha terve
+    # päeva, sh analüüsi, mis poleks serverit üldse vajanud (vt 2026-06-09).
+    #
+    # Loogika:
+    #   1) Pin olemas (cache'ist) -> kasuta seda. Ei skanni uuesti, et üks
+    #      võrgust tulnud skann ei saaks pinni üle kirjutada (TOFU: skanni
+    #      usaldame AINULT esmasel loomisel).
+    #   2) Pinni pole -> esmane ssh-keyscan (3 katset). Õnnestumisel pinnime.
+    #   3) Esmane skann kukkus ja pinni pole -> SKIP_UPLOAD=1: SCP jäetakse
+    #      puhtalt vahele (analüüs ja Pages avaldatakse ikkagi).
     - name: Add server fingerprint
       shell: bash
       env:
         SERVER_HOST: ${{ secrets.SERVER_HOST }}
       run: |
         set -uo pipefail
+
+        # 1) Pin olemas — kasuta cache'itud sõrmejälge.
+        if [ -s known_hosts_seppo ]; then
+          cat known_hosts_seppo >> ~/.ssh/known_hosts
+          echo "SKIP_UPLOAD=0" >> "$GITHUB_ENV"
+          echo "Kasutan cache'itud serveri sõrmejälge ($(wc -l < known_hosts_seppo) rida)."
+          exit 0
+        fi
+
+        # 2) Pinni pole — esmane loomine ssh-keyscan'iga (TOFU), 3 katset.
         tmp_keys="$RUNNER_TEMP/keyscan.out"
         for attempt in 1 2 3; do
           : > "$tmp_keys"
           ssh-keyscan -T 15 -H "$SERVER_HOST" > "$tmp_keys" 2>/dev/null || true
           if [ -s "$tmp_keys" ]; then
             cat "$tmp_keys" >> ~/.ssh/known_hosts
-            echo "ssh-keyscan õnnestus katsel $attempt ($(wc -l < "$tmp_keys") rida)."
+            cp "$tmp_keys" known_hosts_seppo
+            echo "SKIP_UPLOAD=0" >> "$GITHUB_ENV"
+            echo "ssh-keyscan õnnestus katsel $attempt — sõrmejälg pinnitud ($(wc -l < "$tmp_keys") rida)."
             exit 0
           fi
           if [ "$attempt" -lt 3 ]; then
             echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit — proovin uuesti..."
             sleep 10
-          else
-            echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit."
           fi
         done
-        echo "::error::ssh-keyscan ebaõnnestus 3 korda — server pole kättesaadav."
-        exit 1
+
+        # 3) Esmane skann kukkus ja pinni pole — jäta SCP vahele.
+        echo "SKIP_UPLOAD=1" >> "$GITHUB_ENV"
+        echo "::warning::ssh-keyscan ebaõnnestus 3 korda ja serveri sõrmejälge pole veel cache'is — jätan SCP-üleslaadimise vahele. Analüüs ja GitHub Pages avaldatakse ikkagi."
 
     # Statistikaameti inflatsiooni toorcache — väike (~paar KB) RDS fail,
     # mille NAV_kasv.R kirjutab iga eduka päringu järel ja millest see
@@ -124,6 +161,7 @@ jobs:
       run: |
         docker run --rm \
           --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
+          --env SKIP_UPLOAD=${{ env.SKIP_UPLOAD }} \
           --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
           --volume ~/.ssh:/root/.ssh:ro \
           --volume "${{ github.workspace }}:/home/rstudio/project" \

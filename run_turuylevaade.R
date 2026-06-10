@@ -139,7 +139,17 @@ warn_if_missing(
   "üleslaadimine"
 )
 
-# 4. Lae failid üles
+# 4. Lae failid üles.
+# CI märgib SKIP_UPLOAD=1, kui serveri sõrmejälg puudub (ssh-keyscan kukkus ega
+# pole cache'is — vt main.yml fingerprint samm). Sel juhul jätame SSH-ploki
+# PUHTALT vahele: raportid on genereeritud ja GitHub Pages avaldab need, seega
+# üleslaadimise vahelejätt ei tohi märkida analüüsi ebaõnnestunuks.
+if (identical(Sys.getenv("SKIP_UPLOAD"), "1")) {
+  message(
+    "SKIP_UPLOAD=1 — serveri sõrmejälg puudub, jätan SCP-üleslaadimise vahele. ",
+    "Raportid on genereeritud ja GitHub Pages avaldab need."
+  )
+} else {
 message("Alustan failide üleslaadimist SSH kaudu...")
 tryCatch({
   # Loo SSH ühendus
@@ -222,6 +232,7 @@ tryCatch({
     message("SSH ühendus suletud.")
   }
 })
+}
 
 # Kui mõni genereerimise/renderdamise samm ebaõnnestus, lõpetame veakoodiga,
 # et CI märgiks jooksu punaseks. See toimub alles pärast üleslaadimist, nii et
