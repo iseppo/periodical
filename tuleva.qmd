@@ -67,6 +67,19 @@ ANDMETE_LOPP  <- min(today(), KIHLVEO_LOPP)
 FONDIDE_VARVID <- c("LHV Ettevõtlik" = "#4A4E5A", "SEB 18+" = "#60CD18",
                      "Tuleva Maailma Aktsiad" = "#00aeea")
 
+# --- Siltide paigutus joonte otsas ----------------------------------------
+# Numbrid joonte otsas paigutame fikseeritud FÜÜSILISELE kaugusele, mitte
+# kindla arvu päevade kaugusele. Kuna graafikud salvestatakse alati sama
+# suurusega, annab kindel osakaal x-telje ulatusest püsiva kauguse (mm-tes).
+# Varasem nudge_x = 45 (päeva) kahanes füüsiliselt seda enam, mida pikemaks
+# aegrida kasvas, mistõttu numbrid nihkusid ajapikku joontele liiga lähedale.
+SILDI_NIHE_OSAKAAL <- 0.02  # sildi ja joone otsa vahe osakaaluna x-ulatusest
+
+# Sildi nihe andmeühikutes (päevades) antud kuupäevavahemiku kohta.
+sildi_nihe_paevades <- function(kuupaevad) {
+  as.numeric(max(kuupaevad) - min(kuupaevad)) * SILDI_NIHE_OSAKAAL
+}
+
 url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=",
               KIHLVEO_ALGUS, "&date_to=", ANDMETE_LOPP, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
@@ -118,19 +131,18 @@ if (navid_ok) {
   navid <- navid %>%
     mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
 
-  padding_date <- max_kp + days(60)
-
   p <- navid %>%
     ggplot(aes(x = Kuupäev, y = NAV)) +
     geom_line(aes(color = Fond)) +
     geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
-    geom_blank(aes(x = padding_date, y = 0.9)) +
+    expand_limits(y = 0.9) +
     geom_point(data = navid_end, size = 2, aes(color = Fond)) +
     theme_ipsum_rc() +
     scale_color_manual(values = FONDIDE_VARVID) +
     scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
-    scale_x_date(date_labels = "%m/%Y") +
-    geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = 45, show.legend = FALSE) +
+    # Paremale jätame siltidele püsiva ruumi (osakaaluna teljest), et numbrid mahuksid.
+    scale_x_date(date_labels = "%m/%Y", expand = expansion(mult = c(0.05, 0.08))) +
+    geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = sildi_nihe_paevades(navid$Kuupäev), hjust = 0, show.legend = FALSE) +
     labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
          y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
     theme_transparent
@@ -279,8 +291,8 @@ if (yahoo_ok) {
       ggplot(aes(x = Date, y = SP500TR.Close)) +
       geom_line() +
       geom_point(data = sp500_lastvalue, size = 2) +
-      geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = 45) +
-      scale_x_date(date_labels = "%m/%Y") +
+      geom_text(data = sp500_lastvalue, aes(label = paste0(round(SP500TR.Close), "€")), nudge_x = sildi_nihe_paevades(sp500_tr_eur_df$Date), hjust = 0) +
+      scale_x_date(date_labels = "%m/%Y", expand = expansion(mult = c(0.05, 0.09))) +
       theme_ipsum_rc() +
       labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date)) +
       theme_transparent
