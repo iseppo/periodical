@@ -1,5 +1,38 @@
 <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 0.9em; color: #666;">
-  Minu töine koduleht: <a href="https://seppo.ai" target="_blank" rel="noopener noreferrer">seppo.ai</a>
-   · 
-  Lehe kood GitHubis: <a href="https://github.com/iseppo/periodical" target="_blank" rel="noopener noreferrer">iseppo/periodical</a>
+
+  <!-- Seppo AI logo vilkuva kursoriga (ametlik bränd-snippet, hele taust) -->
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <a href="https://seppo.ai" target="_blank" rel="noopener noreferrer" class="seppo-logo" aria-label="Seppo AI">
+    <span class="p" aria-hidden="true">&gt;</span>seppo<span class="d">.ai</span><span class="cur" aria-hidden="true"></span>
+  </a>
+
+  <div style="margin-top: 16px;">
+    Minu töine koduleht: <a href="https://seppo.ai" target="_blank" rel="noopener noreferrer">seppo.ai</a>
+     ·
+    Lehe kood GitHubis: <a href="https://github.com/iseppo/periodical" target="_blank" rel="noopener noreferrer">iseppo/periodical</a>
+  </div>
 </div>
+
+<style>
+  .seppo-logo{
+    font-family:'JetBrains Mono', ui-monospace, monospace;
+    font-weight:700; font-size:24px;             /* jaluse sobiv suurus */
+    letter-spacing:-0.02em; color:#1A130D;        /* tekst heledal taustal */
+    display:inline-flex; align-items:center; line-height:1;
+    white-space:nowrap; text-decoration:none;
+  }
+  .seppo-logo .p{ color:#D8521A; font-weight:500; margin-right:.34em; }
+  .seppo-logo .d{ color:#D8521A; }
+  .seppo-logo .cur{
+    width:.46em; height:.96em; background:#D8521A;
+    display:inline-block; margin-left:.18em; transform:translateY(.06em);
+    box-shadow:0 0 14px rgba(216,82,26,.4);
+    animation:seppoBlink 1.25s ease-in-out infinite;
+  }
+  @keyframes seppoBlink{ 0%,100%{ opacity:1; } 50%{ opacity:.12; } }
+
+  /* austab kasutaja liikumise-eelistust */
+  @media (prefers-reduced-motion: reduce){
+    .seppo-logo .cur{ animation:none; }
+  }
+</style>
