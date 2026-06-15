@@ -31,7 +31,7 @@ RUN apt-get update && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Paigaldame Quarto, vältides süsteemi paketihaldurit.
-RUN QUARTO_VERSION="1.9.37" && \
+RUN QUARTO_VERSION="1.9.38" && \
     curl -o quarto.tar.gz -L "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.tar.gz" && \
     mkdir -p /opt/quarto && \
     tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1 && \
