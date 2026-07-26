@@ -661,35 +661,103 @@ write_csv(indeksfondid, file = "indeksfondide_turuosa.csv")
 ```{r}
 # helper to plot monthly changes for investors or volume
 
+# Selgitav tühi graafik olukorraks, kus andmeid ei jätku. Parem anda lugejale
+# (ja logile) selge sõnum kui lasta kogu raporti renderdusel katkeda.
+tyhi_graafik <- function(pealkiri, selgitus) {
+  ggplot() +
+    annotate("text", x = 0, y = 0, label = selgitus, colour = "grey70", size = 4.5) +
+    theme_ft_rc() +
+    theme(axis.text = element_blank(), axis.ticks = element_blank(),
+          panel.grid = element_blank()) +
+    labs(title = pealkiri, x = NULL, y = NULL)
+}
+
 make_change_plot <- function(data, months_back, var){
   maksp2ev <- max(data$Kuupäev)
   minp2ev <- maksp2ev %m-% months(months_back)
 
-  kuuinfo <- data %>%
-    ungroup() %>%
-    filter(Kuupäev > minp2ev) %>%
-    filter(Kuupäev == min(Kuupäev, na.rm = TRUE) | Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
-    select(Lühinimi, !!sym(var), Kuupäev) %>%
-    pivot_wider(names_from = Kuupäev, values_from = !!sym(var))
+  if(var == "maht") {
+    x_label <- "muutus (milj. eurot)"
+    title_prefix <- "Maht: "
+  } else {
+    x_label <- "muutus"
+    title_prefix <- "Investorite arv: "
+  }
+  pealkiri <- paste0(title_prefix, minp2ev, " - ", maksp2ev)
 
-  names(kuuinfo)[c(2, 3)] <- c("eelmine_kuu", "täna")
+  aken <- data %>%
+    ungroup() %>%
+    filter(Kuupäev > minp2ev)
+
+  # Muutuse arvutamiseks on vaja kahte otspunkti. Kui aknas on ainult üks
+  # kuupäev (nt pikem andmekatkestus Pensionikeskuses), jätame graafiku vahele.
+  if (nrow(aken) == 0) {
+    message("make_change_plot (", var, ", ", months_back, " kuud): aknas ",
+            minp2ev, " - ", maksp2ev, " ei ole ühtegi rida, jätan graafiku vahele")
+    return(tyhi_graafik(pealkiri, "andmeid ei ole"))
+  }
+  otsad <- range(aken$Kuupäev, na.rm = TRUE)
+  if (otsad[1] == otsad[2]) {
+    message("make_change_plot (", var, ", ", months_back, " kuud): aknas on ainult ",
+            "üks kuupäev (", otsad[1], "), jätan graafiku vahele")
+    return(tyhi_graafik(pealkiri, "andmeid ei ole piisavalt"))
+  }
+
+  kuuinfo <- aken %>%
+    filter(Kuupäev %in% otsad) %>%
+    select(Lühinimi, !!sym(var), Kuupäev) %>%
+    # Ühinenud fondid võivad jagada sama lühinime (vt case_when ülalpool). Ilma
+    # values_fn'ita teeks pivot_wider neist list-veeru ja kogu raport kukuks.
+    pivot_wider(
+      names_from = Kuupäev,
+      values_from = !!sym(var),
+      names_prefix = "kp_",
+      values_fn = function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
+    )
+
+  # Nimetame otspunktid kuupäeva, mitte veeru asukoha järgi — pivot_wider'i
+  # veergude järjekord sõltub ridade järjekorrast, mitte kuupäevast.
+  eelmine_veerg <- paste0("kp_", otsad[1])
+  tana_veerg <- paste0("kp_", otsad[2])
+  if (!all(c(eelmine_veerg, tana_veerg) %in% names(kuuinfo))) {
+    message("make_change_plot (", var, ", ", months_back, " kuud): otspunktide ",
+            "veerud puuduvad, jätan graafiku vahele")
+    return(tyhi_graafik(pealkiri, "andmeid ei ole piisavalt"))
+  }
+  kuuinfo <- kuuinfo %>%
+    rename(eelmine_kuu = !!sym(eelmine_veerg), täna = !!sym(tana_veerg))
 
   if(var == "maht") {
     kuuinfo_graaf <- kuuinfo %>%
       mutate(muutus = round((täna - eelmine_kuu)/1000000, 1),
              muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus * 1000000 / eelmine_kuu), NA_real_))
-    x_label <- "muutus (milj. eurot)"
-    title_prefix <- "Maht: "
   } else {
     kuuinfo_graaf <- kuuinfo %>%
       mutate(muutus = täna - eelmine_kuu,
              muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus / eelmine_kuu, 1), NA_real_))
-    x_label <- "muutus"
-    title_prefix <- "Investorite arv: "
+  }
+
+  # Fondid, kellel üks otspunkt puudub või on loetamatu (Pensionikeskuse
+  # andmeauk), jätame graafikult välja — tulpa nagunii joonistada ei saa.
+  puuduvad_fondid <- kuuinfo_graaf$Lühinimi[is.na(kuuinfo_graaf$muutus)]
+  if (length(puuduvad_fondid) > 0) {
+    message("make_change_plot (", var, ", ", months_back, " kuud): andmed puuduvad, ",
+            "jätan graafikult välja: ", paste(puuduvad_fondid, collapse = ", "))
+    kuuinfo_graaf <- filter(kuuinfo_graaf, !is.na(muutus))
+  }
+  if (nrow(kuuinfo_graaf) == 0) {
+    message("make_change_plot (", var, ", ", months_back, " kuud): ühelgi fondil ",
+            "ei ole mõlemat otspunkti, jätan graafiku vahele")
+    return(tyhi_graafik(pealkiri, "andmeid ei ole"))
   }
 
   kuuinfo_graaf <- kuuinfo_graaf %>%
-    mutate(Lühinimi = fct_reorder(Lühinimi, muutus)) %>%
+    # factor() on siin oluline: forcats 1.0.1 fct_reorder eemaldab NA-d
+    # originaalvektorist (.f), aga võrdleb tulemust juba varem arvutatud
+    # faktoritasemetega — character-sisendi puhul annab see vea
+    # "idx must contain one integer for each level of f". Faktorina jäävad
+    # tasemed alles ka siis, kui mõni rida välja langeb.
+    mutate(Lühinimi = fct_reorder(factor(Lühinimi), muutus)) %>%
     mutate(ette = case_when(
       muutus > 0 ~ "+",
       muutus < 0 ~ "",
@@ -710,8 +778,7 @@ make_change_plot <- function(data, months_back, var){
     geom_col(data = filter(kuuinfo_graaf, Lühinimi == "Tuleva Akt"),
              fill = "#00aeea", color = "#00aeea") +
     theme_ft_rc() +
-    labs(title = paste0(title_prefix, minp2ev, " - ", maksp2ev),
-         y = "", x = x_label)
+    labs(title = pealkiri, y = "", x = x_label)
 
   kaugus <- dist(range(kuuinfo_graaf$muutus))
 

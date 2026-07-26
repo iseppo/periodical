@@ -125,7 +125,10 @@ if (navid_ok) {
   max_kp <- max(navid$Kuupäev)
 
   navid_end <- navid_end %>%
-    mutate(Fond = fct_reorder(Fond, NAV)) %>%
+    # factor() enne fct_reorder'i: forcats 1.0.1 viskab character-sisendi ja
+    # NA väärtuse (nt fond, mille algne NAV oli 0) koosmõjul vea
+    # "idx must contain one integer for each level of f".
+    mutate(Fond = fct_reorder(factor(Fond), NAV)) %>%
     mutate(Fond = fct_rev(Fond))
 
   navid <- navid %>%
@@ -214,7 +217,8 @@ fondide_tasud <- fondide_tasud %>%
 
 if (nrow(fondide_tasud) > 0) {
   p_tasud <- fondide_tasud %>%
-    ggplot(aes(x = fct_reorder(fond, jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
+    # factor() enne fct_reorder'i — vt selgitust navid_end juures ülalpool.
+    ggplot(aes(x = fct_reorder(factor(fond), jooksvad_tasud_10k), y = jooksvad_tasud_10k)) +
     geom_col(aes(fill = fond), show.legend = FALSE) +
     scale_fill_manual(values = FONDIDE_VARVID) +
     geom_bar_text(aes(label = paste0(round(jooksvad_tasud_10k, 2), "€")), vjust = -0.5) +
