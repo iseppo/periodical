@@ -1,13 +1,13 @@
 # Alustame Rocker Projecti pildist, mis on spetsiaalselt loodud Positi binaaridega töötamiseks.
-# r-ver:4.6.0 baseerub Ubuntu 24.04 (noble) peal (varasem 4.5.2 oli Debian bookworm).
-FROM rocker/r-ver:4.6.0
+# r-ver:4.6.2 baseerub Ubuntu 26.04 (resolute) peal (4.6.0 oli 24.04 noble, 4.5.2 Debian bookworm).
+FROM rocker/r-ver:4.6.2
 
 # Seadistame ajavööndi ja väldime interaktiivseid dialooge.
 ENV TZ=Europe/Tallinn
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Paigaldame kõik vajalikud süsteemi sõltuvused.
-# Ubuntu 24.04 (noble) baaspildil on 'multiverse' komponent juba vaikimisi lubatud,
+# Ubuntu baaspildil on 'multiverse' komponent juba vaikimisi lubatud,
 # nii et ttf-mscorefonts-installer paigaldub ilma apt-allikate muutmata.
 RUN apt-get update && \
     echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections && \
@@ -31,7 +31,7 @@ RUN apt-get update && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Paigaldame Quarto, vältides süsteemi paketihaldurit.
-RUN QUARTO_VERSION="1.9.38" && \
+RUN QUARTO_VERSION="1.11.9" && \
     curl -o quarto.tar.gz -L "https://github.com/quarto-dev/quarto-cli/releases/download/v${QUARTO_VERSION}/quarto-${QUARTO_VERSION}-linux-amd64.tar.gz" && \
     mkdir -p /opt/quarto && \
     tar -xzf quarto.tar.gz -C /opt/quarto --strip-components=1 && \
@@ -48,7 +48,7 @@ COPY renv.lock .
 RUN R -e "install.packages('renv')"
 
 # Taastame R-i paketid. Rocker pildid on juba seadistatud kasutama Positi binaarset repositooriumi.
-RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')); renv::restore()"
+RUN R -e "options(repos = c(CRAN = 'https://packagemanager.posit.co/cran/__linux__/resolute/latest')); renv::restore()"
 
 # Registreerime hrbrthemes fondid R-is.
 RUN R -e "options(hrbrthemes.loadfonts=TRUE); suppressPackageStartupMessages(library(hrbrthemes))"
