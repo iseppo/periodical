@@ -9,7 +9,12 @@ export default {
     const path = decodeURIComponent(new URL(request.url).pathname);
     if (path.endsWith("/")) {
       const index = await env.ASSETS.fetch(new Request(new URL("index.html", request.url), request));
-      if (index.ok) return index;
+      if (index.ok) {
+        if (!path.startsWith("/tuleva/")) return index;
+        const res = new Response(index.body, index);
+        res.headers.set("X-Robots-Tag", "noindex, nofollow");
+        return res;
+      }
     }
     if (request.method === "GET" || request.method === "HEAD") {
       const res = await fromR2(request, env.BIG, path.replace(/^\//, ""));

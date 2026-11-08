@@ -46,6 +46,9 @@ const entries = fs.readdirSync(tuleva).map((name) => {
 });
 fs.writeFileSync(path.join(tuleva, "index.html"), renderListing("/tuleva/", entries));
 
+// tuleva/ is working data, not meant for search results (kihlveod/tuleva.html stays indexable).
+fs.writeFileSync(path.join(OUT, "_headers"), "/tuleva/*\n  X-Robots-Tag: noindex, nofollow\n");
+
 for (const d of [OUT, MEDIA_OUT]) {
   if (!fs.existsSync(d)) continue;
   for (const f of fs.readdirSync(d, { recursive: true })) {
