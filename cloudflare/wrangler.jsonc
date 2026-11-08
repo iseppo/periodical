@@ -1,0 +1,22 @@
+{
+  // Deployed daily by .github/workflows/main.yml (step "Deploy reports to Cloudflare").
+  // Routes are more specific than the main seppo.ai Worker (repo seppoai), so they win.
+  "name": "seppo-ai-kihlveod",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "seppo.ai/kihlveod/*", "zone_name": "seppo.ai" },
+    { "pattern": "seppo.ai/tuleva/*", "zone_name": "seppo.ai" }
+  ],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // URLs stay exactly as published (canonical is .../tuleva.html); dir/ → dir/index.html in worker.js.
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  "r2_buckets": [
+    { "binding": "BIG", "bucket_name": "seppo-ai-files" }
+  ]
+}

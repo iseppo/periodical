@@ -24,92 +24,6 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
-    - name: Setup SSH agent
-      shell: bash
-      env:
-        SSH_PRIVATE_KEY: ${{ secrets.UPLOAD_TO_ZONE }}
-      run: |
-        set -euo pipefail
-        install -d -m 700 ~/.ssh
-        key_file="$RUNNER_TEMP/upload_to_zone.key"
-        printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
-        chmod 600 "$key_file"
-
-        eval "$(ssh-agent -a "$RUNNER_TEMP/ssh-agent.sock")"
-        ssh-add "$key_file"
-        rm -f "$key_file"
-
-        {
-          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK"
-          echo "SSH_AGENT_PID=$SSH_AGENT_PID"
-        } >> "$GITHUB_ENV"
-
-    # Serveri host key "pin": kord edukalt skännitud sõrmejälg cache'itakse ja
-    # taaskasutatakse iga päev. Stabiilne võti (mitte run_id-põhine) annab
-    # write-once semantika — esimene jooks loob, järgnevad saavad täpse cache-
-    # tabamuse ega kirjuta üle. Nii ei sõltu üleslaadimine enam igapäevasest
-    # ssh-keyscan'ist (mis tabab vahel Azure→Eesti hetkekatkestust). Rotatsioon:
-    # kui seppo.ai host key päriselt vahetub, ebaõnnestub SCP valjult host-key
-    # kontrollil — siis bumbi võti known-hosts-v1 -> v2 (sama invalideerimis-
-    # muster kui NAV/inflatsiooni cache'iga).
-    - name: Restore server fingerprint cache
-      uses: actions/cache@v5
-      with:
-        path: known_hosts_seppo
-        key: known-hosts-v1
-
-    # Veendu, et seppo.ai host key on ~/.ssh/known_hosts'is, et hilisem SCP
-    # (run_turuylevaade.R sees) saaks serverit verifitseerida.
-    #
-    # TÄHTIS: see samm EI lõpeta pipeline'i veaga. Analüüs, Quarto-raportid ja
-    # GitHub Pages avaldamine EI sõltu upload-serverist — seppo.ai on vajalik
-    # ainult lõpus toimuva SCP jaoks. Varem lõi keyscan'i exit 1 maha terve
-    # päeva, sh analüüsi, mis poleks serverit üldse vajanud (vt 2026-06-09).
-    #
-    # Loogika:
-    #   1) Pin olemas (cache'ist) -> kasuta seda. Ei skanni uuesti, et üks
-    #      võrgust tulnud skann ei saaks pinni üle kirjutada (TOFU: skanni
-    #      usaldame AINULT esmasel loomisel).
-    #   2) Pinni pole -> esmane ssh-keyscan (3 katset). Õnnestumisel pinnime.
-    #   3) Esmane skann kukkus ja pinni pole -> SKIP_UPLOAD=1: SCP jäetakse
-    #      puhtalt vahele (analüüs ja Pages avaldatakse ikkagi).
-    - name: Add server fingerprint
-      shell: bash
-      env:
-        SERVER_HOST: ${{ secrets.SERVER_HOST }}
-      run: |
-        set -uo pipefail
-
-        # 1) Pin olemas — kasuta cache'itud sõrmejälge.
-        if [ -s known_hosts_seppo ]; then
-          cat known_hosts_seppo >> ~/.ssh/known_hosts
-          echo "SKIP_UPLOAD=0" >> "$GITHUB_ENV"
-          echo "Kasutan cache'itud serveri sõrmejälge ($(wc -l < known_hosts_seppo) rida)."
-          exit 0
-        fi
-
-        # 2) Pinni pole — esmane loomine ssh-keyscan'iga (TOFU), 3 katset.
-        tmp_keys="$RUNNER_TEMP/keyscan.out"
-        for attempt in 1 2 3; do
-          : > "$tmp_keys"
-          ssh-keyscan -T 15 -H "$SERVER_HOST" > "$tmp_keys" 2>/dev/null || true
-          if [ -s "$tmp_keys" ]; then
-            cat "$tmp_keys" >> ~/.ssh/known_hosts
-            cp "$tmp_keys" known_hosts_seppo
-            echo "SKIP_UPLOAD=0" >> "$GITHUB_ENV"
-            echo "ssh-keyscan õnnestus katsel $attempt — sõrmejälg pinnitud ($(wc -l < "$tmp_keys") rida)."
-            exit 0
-          fi
-          if [ "$attempt" -lt 3 ]; then
-            echo "ssh-keyscan katse $attempt ei andnud ühtegi võtit — proovin uuesti..."
-            sleep 10
-          fi
-        done
-
-        # 3) Esmane skann kukkus ja pinni pole — jäta SCP vahele.
-        echo "SKIP_UPLOAD=1" >> "$GITHUB_ENV"
-        echo "::warning::ssh-keyscan ebaõnnestus 3 korda ja serveri sõrmejälge pole veel cache'is — jätan SCP-üleslaadimise vahele. Analüüs ja GitHub Pages avaldatakse ikkagi."
-
     # Statistikaameti inflatsiooni toorcache — väike (~paar KB) RDS fail,
     # mille NAV_kasv.R kirjutab iga eduka päringu järel ja millest see
     # loeb juhul, kui andmed.stat.ee on 3 katsel kättesaamatu (vt
@@ -157,13 +71,12 @@ jobs:
           fi
         done
 
-    - name: Run Analysis and Upload in Docker
+    # SKIP_UPLOAD=1: vana Zone SCP on välja lülitatud — seppo.ai serveerib
+    # aruandeid Cloudflare'ist (vt samm "Deploy reports to Cloudflare").
+    - name: Run Analysis in Docker
       run: |
         docker run --rm \
-          --env SSH_AUTH_SOCK=${{ env.SSH_AUTH_SOCK }} \
-          --env SKIP_UPLOAD=${{ env.SKIP_UPLOAD }} \
-          --volume "${{ env.SSH_AUTH_SOCK }}:${{ env.SSH_AUTH_SOCK }}" \
-          --volume ~/.ssh:/root/.ssh:ro \
+          --env SKIP_UPLOAD=1 \
           --volume "${{ github.workspace }}:/home/rstudio/project" \
           --workdir "/home/rstudio/project" \
           "${{ env.ANALYSIS_IMAGE }}" \
@@ -180,43 +93,34 @@ jobs:
             echo '--- Done ---'
           "
 
-    # --- Cloudflare R2: seppo.ai/kihlveod/ ja seppo.ai/tuleva/ ---
-    # seppo.ai Worker serveerib need kaustad otse R2-st (bucket seppo-ai-files),
-    # seega piisab failide üleslaadimisest — saiti pole vaja uuesti deploy'da.
-    # Failinimekiri peegeldab run_turuylevaade.R SCP-plokki. Jäetakse vahele,
-    # kui R2 saladusi pole seadistatud. --delete'i EI kasutata (screenshotid on
-    # tingimuslikud ja vanad failid peavad alles jääma).
-    - name: Upload reports to Cloudflare R2
+    # --- Cloudflare: seppo.ai/kihlveod/ ja seppo.ai/tuleva/ ---
+    # Eraldi staatiline Worker "seppo-ai-kihlveod" (cloudflare/), mille route'id on
+    # täpsemad kui seppo.ai põhisaidil. Staatilised failid on tasuta ja piiranguta.
+    # Video läheb R2-sse (staatilised failid ei toeta byte range'i, mida video vajab);
+    # Worker loeb selle sealt. Saladused: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit,
+    # Workers Routes: Edit, Workers R2 Storage: Edit), R2_ACCOUNT_ID.
+    - name: Deploy reports to Cloudflare
       if: always()
       shell: bash
       env:
-        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-        AWS_DEFAULT_REGION: auto
-        # aws-cli >= 2.23 lisab vaikimisi checksum'id, mida R2 ei toeta.
-        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
-        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
-        R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
       run: |
-        set -uo pipefail
-        if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
-          echo "R2 saladusi pole seadistatud — jätan vahele."; exit 0
+        set -euo pipefail
+        if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+          echo "::warning::CLOUDFLARE_API_TOKEN puudub — seppo.ai aruandeid ei uuendata"; exit 0
         fi
-        stage="$RUNNER_TEMP/r2"
-        mkdir -p "$stage/kihlveod" "$stage/tuleva"
-        for f in aastane_tulu_tuleva_lhv.png tuleva.html aastane_tulu_animeeritud.mp4 kihlvedu.png \
-                 ekspress_screenshot.png fb_screenshot.png tuleva-style.css; do
-          [ -f "$f" ] && cp "$f" "$stage/kihlveod/"
-        done
-        [ -d tuleva_files ] && cp -r tuleva_files "$stage/kihlveod/"
-        for f in turuylevaade.html koguturg_indeksfondid_osakaal.csv koguturg_koguinfo.csv \
-                 III_sammas.html iii_sammas_koguturg.csv iii_sammas_ajalugu.csv \
-                 iii_sammas_investorid_ajalugu.csv iii_sammas_top_fondid.csv; do
-          [ -f "$f" ] && cp "$f" "$stage/tuleva/"
-        done
-        find "$stage" -type f | sed "s|$stage/||" | sort
-        aws s3 sync "$stage/" s3://seppo-ai-files/ --endpoint-url "$R2_ENDPOINT" --only-show-errors \
-          || echo "::warning::R2 üleslaadimine ebaõnnestus — seppo.ai näitab eelmist seisu"
+        if [ ! -f tuleva.html ]; then
+          echo "::warning::tuleva.html puudub — seppo.ai jääb eelmisesse seisu"; exit 0
+        fi
+        node cloudflare/stage.mjs
+        cd cloudflare
+        if [ -d media ]; then
+          find media -type f | while IFS= read -r f; do
+            npx --yes wrangler@4 r2 object put "seppo-ai-files/${f#media/}" --file "$f" --remote
+          done
+        fi
+        npx --yes wrangler@4 deploy
 
     # --- GitHub Pages: avaldame raportid (tuleva juurena, teised failinimega) ---
     - name: Assemble GitHub Pages site
@@ -313,10 +217,3 @@ jobs:
         git commit -m "chore: heartbeat $(date -u +%Y-%m-%d)"
         git push
 
-    - name: Stop SSH agent
-      if: always()
-      shell: bash
-      run: |
-        if [ -n "${SSH_AGENT_PID:-}" ]; then
-          ssh-agent -k
-        fi
