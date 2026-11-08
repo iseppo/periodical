@@ -4,7 +4,7 @@ This document provides comprehensive guidance for AI assistants working with the
 
 ## Project Overview
 
-**Periodical** is an Estonian pension fund analytics platform that generates daily market reports and fund comparisons. It fetches data from multiple sources, creates visualizations (static and animated), renders Quarto reports, and uploads them to seppo.ai.
+**Periodical** is an Estonian pension fund analytics platform that generates daily market reports and fund comparisons. It fetches data from multiple sources, creates visualizations (static and animated), renders Quarto reports, and publishes them to seppo.ai/kihlveod/ and seppo.ai/tuleva/ via a Cloudflare Worker (`cloudflare/`).
 
 **Primary Language**: Estonian (code comments, variable names, and reports are in Estonian)
 
@@ -21,7 +21,7 @@ This document provides comprehensive guidance for AI assistants working with the
 ```
 periodical/
 ├── NAV_kasv.R              # Main data processing and visualization script
-├── run_turuylevaade.R      # Orchestrator script (runs analysis + uploads)
+├── run_turuylevaade.R      # Orchestrator script (runs analysis; legacy SCP upload, skipped in CI)
 ├── fetch_iii_sammas_fondid.R  # III pillar fund list fetcher
 ├── turuylevaade.qmd        # II pillar market overview (Quarto)
 ├── tuleva.qmd              # Pension fund comparison page (Quarto)
@@ -96,8 +96,12 @@ quarto render turuylevaade.qmd
 quarto render tuleva.qmd
 quarto render III_sammas.qmd
 
-# Full pipeline (generates + uploads)
-Rscript run_turuylevaade.R
+# Full pipeline (generates reports; SKIP_UPLOAD=1 skips the legacy Zone SCP step)
+SKIP_UPLOAD=1 Rscript run_turuylevaade.R
+
+# Stage and deploy to Cloudflare (from repo root; wrangler must be logged in)
+node cloudflare/stage.mjs
+cd cloudflare && npx wrangler deploy
 ```
 
 ### Docker Development
@@ -116,7 +120,11 @@ docker run --rm -v "$PWD:/home/rstudio/project" periodical Rscript NAV_kasv.R
   1. Disables renv (uses pre-built Docker image)
   2. Runs `NAV_kasv.R`
   3. Renders all Quarto reports
-  4. Uploads to seppo.ai via SCP
+  4. Runs the analysis in Docker with `SKIP_UPLOAD=1` (no SCP)
+  5. "Deploy reports to Cloudflare": `node cloudflare/stage.mjs` copies reports into
+     `cloudflare/public/{kihlveod,tuleva}/`, uploads video (`cloudflare/media/`) to R2 bucket
+     `seppo-ai-files`, then `wrangler deploy` publishes Worker `seppo-ai-kihlveod`
+     (routes `seppo.ai/kihlveod/*` and `seppo.ai/tuleva/*`)
 
 - **build_image.yml** - Triggered on Dockerfile/renv.lock changes
   - Builds and pushes to `ghcr.io/iseppo/periodical:main`
@@ -188,7 +196,7 @@ The pipeline uses "fail-forward" strategy - individual failures don't stop the e
 Rscript NAV_kasv.R || echo 'NAV_kasv.R failed, continuing...'
 ```
 
-This ensures partial outputs are still uploaded even if one component fails.
+This ensures partial outputs are still published even if one component fails.
 
 ## Testing and Validation
 
@@ -245,12 +253,21 @@ To force fresh data fetch:
 rm cache_nav_data.rds cache_inflation_data.rds
 ```
 
-### SSH Upload Failures
+### Publishing (Cloudflare)
 
-Check:
-1. SSH key is properly configured (`UPLOAD_TO_ZONE` secret)
-2. Server fingerprint is in known_hosts
-3. Target directories exist on server
+seppo.ai moved from Zone.ee to Cloudflare Workers on 2026-11-08. Never SCP/SSH to the old Zone
+server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`SKIP_UPLOAD=1`).
+
+- **To add a published file:** add it to `FILES` in `cloudflare/stage.mjs`. Video (mp4/webm/mov)
+  goes to R2 automatically.
+- **Search indexing:** `kihlveod/` is indexable (`kihlveod/tuleva.html` is in seppo.ai's sitemap).
+  `tuleva/` is `noindex`, set via `_headers` written by `stage.mjs` and in `cloudflare/worker.js`.
+- **Config:** `cloudflare/wrangler.jsonc`. Assets use `html_handling: "none"` so `.html` URLs stay
+  canonical. The Worker only runs for `dir/` index pages and R2 video.
+- **Deploy failures:** check the `CLOUDFLARE_API_TOKEN` secret, which maps to Cloudflare account token
+  `github_periodical` (Workers Scripts/Routes + R2 write). If it is missing, the step skips with a warning.
+- **Main site** (everything else on seppo.ai) lives in the separate repo `iseppo/seppoai`
+  (`./cloudflare/deploy.sh`).
 
 ## File Outputs Summary
 
@@ -278,18 +295,18 @@ other two keep their filenames. Site: <https://iseppo.github.io/periodical/>
 - **Visualization**: ggplot2, hrbrthemes, ggfittext, plotly
 - **Animation**: gganimate
 - **Parallel**: future, furrr, parallel
-- **SSH**: ssh (for uploads)
+- **SSH**: ssh (legacy Zone upload only, unused in CI)
 
 ### System Dependencies
 
 - R 4.6 (renv.lock is pinned to 4.6.0)
 - Quarto >= 1.4
 - ffmpeg (for video encoding)
-- SSH client (for uploads)
+- Node.js + wrangler 4 (Cloudflare deploy; CI uses `npx wrangler@4`)
 
 ## Secrets Required (GitHub Actions)
 
-- `UPLOAD_TO_ZONE` - SSH private key for server access
-- `SERVER_HOST` - Target server hostname
+- `CLOUDFLARE_API_TOKEN` - Cloudflare API token (`github_periodical`) for `wrangler deploy` and R2 uploads
+- `R2_ACCOUNT_ID` - Cloudflare account ID (used as `CLOUDFLARE_ACCOUNT_ID`)
 - `DOCKERHUB_USERNAME` - Docker Hub login
 - `DOCKERHUB_TOKEN2` - Docker Hub access token
