@@ -180,6 +180,44 @@ jobs:
             echo '--- Done ---'
           "
 
+    # --- Cloudflare R2: seppo.ai/kihlveod/ ja seppo.ai/tuleva/ ---
+    # seppo.ai Worker serveerib need kaustad otse R2-st (bucket seppo-ai-files),
+    # seega piisab failide üleslaadimisest — saiti pole vaja uuesti deploy'da.
+    # Failinimekiri peegeldab run_turuylevaade.R SCP-plokki. Jäetakse vahele,
+    # kui R2 saladusi pole seadistatud. --delete'i EI kasutata (screenshotid on
+    # tingimuslikud ja vanad failid peavad alles jääma).
+    - name: Upload reports to Cloudflare R2
+      if: always()
+      shell: bash
+      env:
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        # aws-cli >= 2.23 lisab vaikimisi checksum'id, mida R2 ei toeta.
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+        R2_ENDPOINT: https://${{ secrets.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+      run: |
+        set -uo pipefail
+        if [ -z "${AWS_ACCESS_KEY_ID:-}" ]; then
+          echo "R2 saladusi pole seadistatud — jätan vahele."; exit 0
+        fi
+        stage="$RUNNER_TEMP/r2"
+        mkdir -p "$stage/kihlveod" "$stage/tuleva"
+        for f in aastane_tulu_tuleva_lhv.png tuleva.html aastane_tulu_animeeritud.mp4 kihlvedu.png \
+                 ekspress_screenshot.png fb_screenshot.png tuleva-style.css; do
+          [ -f "$f" ] && cp "$f" "$stage/kihlveod/"
+        done
+        [ -d tuleva_files ] && cp -r tuleva_files "$stage/kihlveod/"
+        for f in turuylevaade.html koguturg_indeksfondid_osakaal.csv koguturg_koguinfo.csv \
+                 III_sammas.html iii_sammas_koguturg.csv iii_sammas_ajalugu.csv \
+                 iii_sammas_investorid_ajalugu.csv iii_sammas_top_fondid.csv; do
+          [ -f "$f" ] && cp "$f" "$stage/tuleva/"
+        done
+        find "$stage" -type f | sed "s|$stage/||" | sort
+        aws s3 sync "$stage/" s3://seppo-ai-files/ --endpoint-url "$R2_ENDPOINT" --only-show-errors \
+          || echo "::warning::R2 üleslaadimine ebaõnnestus — seppo.ai näitab eelmist seisu"
+
     # --- GitHub Pages: avaldame raportid (tuleva juurena, teised failinimega) ---
     - name: Assemble GitHub Pages site
       id: site
