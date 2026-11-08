@@ -99,9 +99,9 @@ quarto render III_sammas.qmd
 # Full pipeline (generates reports; SKIP_UPLOAD=1 skips the legacy Zone SCP step)
 SKIP_UPLOAD=1 Rscript run_turuylevaade.R
 
-# Stage and deploy to Cloudflare (from repo root; wrangler must be logged in)
-node cloudflare/stage.mjs
-cd cloudflare && npx wrangler deploy
+# Publishing: ONLY via GitHub Actions. Local reports are stale; stage.mjs and
+# `wrangler deploy` refuse to run outside CI (cloudflare/ci-only.mjs).
+gh workflow run main.yml
 ```
 
 ### Docker Development

@@ -2,6 +2,7 @@
 // Stages the published reports into cloudflare/public/{kihlveod,tuleva}/ for `wrangler deploy`.
 // Video goes to cloudflare/media/ instead (uploaded to R2: static assets can't serve byte ranges).
 // Run from the repo root after run_turuylevaade.R.
+import "./ci-only.mjs"; // ainult GitHub Actions; kohalikud aruanded on vanad
 import fs from "node:fs";
 import path from "node:path";
 import { renderListing } from "./listing.js";

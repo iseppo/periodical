@@ -5,6 +5,8 @@
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
+  // Kaitse: `wrangler deploy` väljaspool GitHub Actionsit katkeb (kohalikud aruanded on vanad).
+  "build": { "command": "node ci-only.mjs" },
   "routes": [
     { "pattern": "seppo.ai/kihlveod/*", "zone_name": "seppo.ai" },
     { "pattern": "seppo.ai/tuleva/*", "zone_name": "seppo.ai" }
