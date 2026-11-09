@@ -171,7 +171,7 @@ jobs:
           graafikuid=$( (grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" || true) | wc -l)
           vigu=$( (grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" || true) | wc -l)
           echo "Laius $laius: graafikuid $graafikuid, OJS vigu $vigu"
-          if [ "$graafikuid" -lt 8 ] || [ "$vigu" -gt 0 ]; then halb=1; fi
+          if [ "$graafikuid" -lt 13 ] || [ "$vigu" -gt 0 ]; then halb=1; fi
         done
         kill $srv || true
         if [ "$halb" = 1 ]; then

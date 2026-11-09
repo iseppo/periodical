@@ -275,6 +275,10 @@ server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`
   Quarto OJS runtime) so the charts do not depend on jsdelivr.
 - **Search indexing:** `kihlveod/` is indexable (`kihlveod/tuleva.html` is in seppo.ai's sitemap).
   `tuleva/` is `noindex`, set via `_headers` written by `stage.mjs` and in `cloudflare/worker.js`.
+- **`seppo.ai/tuleva/`** shows the market overview: `stage.mjs` copies `turuylevaade.html` to
+  `tuleva/index.html`. There is no directory listing any more (`listing.js` was removed).
+- **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html`;
+  raise the threshold when adding charts. Below it, the market overview group is published from last-good.
 - **Config:** `cloudflare/wrangler.jsonc`. Assets use `html_handling: "none"` so `.html` URLs stay
   canonical. The Worker only runs for `dir/` index pages and R2 video.
 - **Deploy failures:** check the `CLOUDFLARE_API_TOKEN` secret, which maps to Cloudflare account token
@@ -289,7 +293,7 @@ server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`
 | `aastane_tulu_tuleva_lhv.png` | NAV_kasv.R | kihlveod/ |
 | `aastane_tulu_animeeritud.mp4` | NAV_kasv.R | kihlveod/ |
 | `kihlvedu.png` | NAV_kasv.R | kihlveod/ |
-| `turuylevaade.html` | turuylevaade.qmd | tuleva/ |
+| `turuylevaade.html` | turuylevaade.qmd | tuleva/ (also copied to `tuleva/index.html` by `stage.mjs`) |
 | `tuleva.html` | tuleva.qmd | kihlveod/ |
 | `III_sammas.html` | III_sammas.qmd | tuleva/ |
 | `koguturg_*.csv` | turuylevaade.qmd | tuleva/ |

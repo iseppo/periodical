@@ -9,7 +9,6 @@
 import "./ci-only.mjs"; // ainult GitHub Actions; kohalikud aruanded on vanad
 import fs from "node:fs";
 import path from "node:path";
-import { renderListing } from "./listing.js";
 
 const OUT = "cloudflare/public";
 const MEDIA_OUT = "cloudflare/media";
@@ -68,14 +67,14 @@ for (const g of GROUPS) {
   }
 }
 
-// tuleva/ was a browsable folder on the old server: keep the listing.
+// seppo.ai/tuleva/ avaleht on turuülevaade (kausta sisu enam ei kuvata).
+// Ressursid on suhtelised ja samas kaustas, seega koopia töötab otse.
 const tuleva = path.join(OUT, "tuleva");
-fs.mkdirSync(tuleva, { recursive: true });
-const entries = fs.readdirSync(tuleva).map((name) => {
-  const s = fs.statSync(path.join(tuleva, name));
-  return { name, dir: s.isDirectory(), size: s.size, mtime: s.mtime };
-});
-fs.writeFileSync(path.join(tuleva, "index.html"), renderListing("/tuleva/", entries));
+if (fs.existsSync(path.join(tuleva, "turuylevaade.html"))) {
+  fs.copyFileSync(path.join(tuleva, "turuylevaade.html"), path.join(tuleva, "index.html"));
+} else {
+  console.log("::warning::turuylevaade.html puudub — seppo.ai/tuleva/ avaleht puudub");
+}
 
 // tuleva/ is working data, not meant for search results (kihlveod/tuleva.html stays indexable).
 fs.writeFileSync(path.join(OUT, "_headers"), "/tuleva/*\n  X-Robots-Tag: noindex, nofollow\n");

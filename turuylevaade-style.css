@@ -62,3 +62,7 @@ h2.anchored { scroll-margin-top: 20px; }
 /* Tooltip ei tohi graafiku servas ära lõikuda (eriti mobiilis) */
 .cell-output-display svg[class^="plot-"] { overflow: visible; }
 .cell-output-display .observablehq { overflow: visible; }
+
+/* Tootluse graafikute riskirühma pealkiri */
+h4.riskirühm { margin: 1.6rem 0 0.2rem; font-size: 1.05rem; }
+h4.riskirühm .allikas { font-weight: 400; display: inline; }
