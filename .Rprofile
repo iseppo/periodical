@@ -11,7 +11,7 @@ local({
     else gsub('"', "", sub("^VERSION_CODENAME=", "", hit[1]))
   }, error = function(e) NA_character_)
 
-  known <- c("noble", "jammy", "focal", "bookworm", "bullseye", "trixie")
+  known <- c("resolute", "noble", "jammy", "focal", "bookworm", "bullseye", "trixie")
   repo <- if (isTRUE(codename %in% known)) {
     sprintf("https://packagemanager.posit.co/cran/__linux__/%s/latest", codename)
   } else {
