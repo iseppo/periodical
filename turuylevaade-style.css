@@ -96,3 +96,7 @@ ul.summad .taht { display: inline-block; width: 10px; height: 10px; border-radiu
 .fonditabel th:nth-child(2), .fonditabel td:nth-child(2) {
   position: sticky; left: 0; background: var(--bg-white); z-index: 1;
 }
+
+/* Peidetud juhtelement (nt rühmavalik, kui rühmi on üks): ei kaardi ega tühja kasti */
+.cell-output-display .observablehq:has(> .peidetud) { display: none; }
+div.cell:has(.peidetud):not(:has(form)) { display: none; }

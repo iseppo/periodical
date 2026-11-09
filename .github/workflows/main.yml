@@ -200,7 +200,7 @@ jobs:
         # Kaks laiust: lauaarvuti ja mobiili kood on graafikutes eri harudes.
         # Kontroll peab mõlemal laiusel õnnestuma; kui Chrome ka teisel katsel
         # tulemust ei anna, ei ole lehte kontrollitud ja avaldame eelmise.
-        for paar in "turuylevaade.html:13" "III_sammas.html:11"; do
+        for paar in "turuylevaade.html:13" "III_sammas.html:10"; do
           fail=${paar%%:*}; min=${paar##*:}
           [ -f "$fail" ] || { echo "::warning::$fail puudub"; continue; }
           halb=0

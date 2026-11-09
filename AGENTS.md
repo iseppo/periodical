@@ -258,12 +258,17 @@ Same design and approach as the II pillar overview (OJS/Plot, `turuylevaade-styl
   risk level (`data-is_index_fund`, `data-srri`) plus fee and unit-holder count from the statistics table.
   `data/Pensionifondid_III_seed.csv` is only a fallback. Short display names: `lyhinimi` (new funds get an
   automatic name).
+- **Comparison groups:** equity and mixed funds are compared together (`ryhm = "Aktsiad"`); bond funds
+  (name matches `võlakirja|konservatiiv|rahulik`) get their own chart and toggle only when one exists. The official
+  risk level (SRRI) is shown in tooltips/table but not used for grouping (SEB 65+ is "low" but may hold 40 % equities).
 - **Closed funds** = official total − fund sum ("Suletud fondid"). One-day glitches in the official total are
   dropped; mergers are detected from a residual drop matched to abnormal inflows within 0–2 market days.
 - **Unit-holder history per fund** is only published as the latest value, so it accumulates:
   `data/iii_investorid_ajalugu.csv` (committed start) ∪ CI cache ∪ the published CSV on seppo.ai.
-- Render stops (CI then publishes last-good) if the export is older than 10 days or the official total exceeds
-  the fund sum by > max(5 mln €, 1 %) (a fund missing from the export).
+- Render stops (CI then publishes last-good) if the export is older than 10 days, the official total exceeds
+  the fund sum by > max(5 mln €, 1 %), an active fund (in Pensionikeskus' official list) is missing from the last
+  4 export days, or an officially listed fund is absent from the export entirely. Up to 3 partially published
+  trailing days are dropped.
 
 ### Animation Encoding Failures
 
@@ -291,7 +296,7 @@ server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`
   `tuleva/` is `noindex`, set via `_headers` written by `stage.mjs` and in `cloudflare/worker.js`.
 - **`seppo.ai/tuleva/`** shows the market overview: `stage.mjs` copies `turuylevaade.html` to
   `tuleva/index.html`. There is no directory listing any more (`listing.js` was removed).
-- **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html` and 11 in
+- **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html` and 10 in
   `III_sammas.html`; raise the threshold when adding charts. Below it, that report group is published from last-good.
   Both widths must be checked successfully (Chrome failure = fallback). Charts with missing data render an
   empty Plot with a message (`tyhiGraafik`), so a data outage does not drop the chart count.

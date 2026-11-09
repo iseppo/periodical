@@ -1099,7 +1099,7 @@ function ribagraafik({andmed, v, silt, title, caption, xFmt, color, stroke}) {
     marks: [
       Plot.barX(andmed, {y: "nimi", x: v, fill: "tyyp", stroke, strokeWidth: 2}),
       Plot.ruleX([0], {stroke: "#2D2A26"}),
-      kitsas ? Plot.text(andmed, {y: "nimi", text: "nimi", frameAnchor: "left", textAnchor: "start", dy: -15, fontSize: 11, fill: "#2D2A26"}) : null,
+      kitsas ? Plot.text(andmed, {y: "nimi", text: "nimi", frameAnchor: "left", textAnchor: "start", lineAnchor: "bottom", dy: -12, fontSize: 11, fill: "#2D2A26", stroke: "white", strokeWidth: 3, paintOrder: "stroke"}) : null,
       // textAnchor/dx on Plotis konstandid -> positiivsed ja negatiivsed eraldi
       Plot.text(andmed.filter(d => d[v] >= 0), {y: "nimi", x: v, text: silt, textAnchor: "start", dx: 5, fill: pos, fontSize: 11}),
       Plot.text(andmed.filter(d => d[v] < 0), {y: "nimi", x: v, text: silt, textAnchor: "end", dx: -5, fill: neg, fontSize: 11}),

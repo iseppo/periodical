@@ -50,30 +50,48 @@ const copy = (from, to) => {
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.rmSync(MEDIA_OUT, { recursive: true, force: true });
 
+// Vana (legacy) faililoend sobib ainult iseseisvale HTML-ile: kui HTML viitab
+// kaustale <nimi>_files/, mida loendis pole, on see uus formaat ilma ressurssideta.
+const iseseisev = (dir, fl) => fl.filter((f) => f.endsWith(".html")).every((f) => {
+  const html = fs.readFileSync(path.join(LAST_GOOD, dir, f), "utf8");
+  const kaust = f.replace(/\.html$/, "_files/");
+  return fl.includes(kaust) || !html.includes(kaust);
+});
+
+// 1) Otsus iga rühma kohta: värske, eelmine versioon või katkestus
+const plaan = [];
 let fallbacks = 0;
 for (const g of GROUPS) {
   const missing = g.files.filter((f) => !fs.existsSync(src(f)));
-  if (missing.length === 0) {
-    for (const f of g.files) copy(src(f), destOf(g.dir, f));
-    continue;
-  }
+  if (missing.length === 0) { plaan.push({ g, from: null, files: g.files }); continue; }
   // Video on R2-s: kui seda pole, jääb sinna eelmine objekt alles.
   if (g.files.every((f) => MEDIA.test(f))) {
     console.log(`::warning::${g.name}: ${missing.join(", ")} puudub — R2-s jääb eelmine versioon`);
     continue;
   }
-  const varu = [g.files, g.legacy].filter(Boolean)
-    .find((fl) => fl.every((f) => fs.existsSync(path.join(LAST_GOOD, g.dir, src(f)))));
-  if (varu) {
-    console.log(`::warning::${g.name}: puudub ${missing.join(", ")} — avaldan eelmise eduka versiooni`);
-    for (const f of varu) copy(path.join(LAST_GOOD, g.dir, src(f)), destOf(g.dir, f));
-    fallbacks++;
-  } else {
+  const olemas = (fl) => fl.every((f) => fs.existsSync(path.join(LAST_GOOD, g.dir, src(f))));
+  const varu = [g.files, g.legacy && olemas(g.legacy) && iseseisev(g.dir, g.legacy) ? g.legacy : null]
+    .filter(Boolean).find(olemas);
+  if (!varu) {
     // Varukoopiat pole: `wrangler deploy` asendab kogu saidi, seega pooliku
     // komplekti avaldamine kustutaks töötava aruande. Katkestame — sait jääb
     // eelmisesse seisu ja jooks läheb punaseks.
     console.log(`::error::${g.name}: puudub ${missing.join(", ")} ja varukoopiat pole — ei avalda midagi`);
     process.exit(1);
+  }
+  console.log(`::warning::${g.name}: puudub ${missing.join(", ")} — avaldan eelmise eduka versiooni`);
+  plaan.push({ g, from: LAST_GOOD, files: varu });
+  fallbacks++;
+}
+
+// 2) Kopeerimine: värsked rühmad enne. Ühised failid (CSS, ojs-lib) võtab
+// eelmisest versioonist ainult siis, kui ükski värske rühm neid ei andnud —
+// muidu kirjutaks vana koopia üle brauseris kontrollitud värske aruande ressursid.
+for (const { g, from, files } of [...plaan.filter((x) => !x.from), ...plaan.filter((x) => x.from)]) {
+  for (const f of files) {
+    const dest = destOf(g.dir, f);
+    if (from && fs.existsSync(dest)) continue;
+    copy(from ? path.join(from, g.dir, src(f)) : src(f), dest);
   }
 }
 
