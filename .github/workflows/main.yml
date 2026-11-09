@@ -59,6 +59,12 @@ jobs:
         restore-keys: |
           nav-raw-v1-
 
+    # Commititud arhiiv on autoriteetne: hoiame selle alles, sest cache'i taastamine
+    # kirjutab faili üle (vt "Merge closed-fund archive").
+    - name: Keep committed closed-fund archive
+      shell: bash
+      run: cp data/ii_suletud_fondid.csv "$RUNNER_TEMP/arhiiv_git.csv" 2>/dev/null || true
+
     # Turuülevaate cache'id: eelmise jooksu fondide toorandmed (suletud fondide
     # tuvastamiseks ja arhiveerimiseks) ning lõppenud fondivahetuste andmed.
     # Arhiiv on ka siin, et push'i nurjumisel see kaotsi ei läheks (cache'i
@@ -74,6 +80,32 @@ jobs:
         key: turuylevaade-v1-${{ github.run_id }}
         restore-keys: |
           turuylevaade-v1-
+
+    # Cache'i arhiiv võib olla vanem kui Git-is parandatud versioon. Git võidab
+    # iga fondi kohta; cache'ist lisanduvad ainult fondid, mida Git-is pole
+    # (nt eelmise jooksu push nurjus).
+    - name: Merge closed-fund archive
+      shell: bash
+      run: |
+        python3 - <<'EOF'
+        import csv, os, shutil
+        g = os.path.join(os.environ["RUNNER_TEMP"], "arhiiv_git.csv")
+        c = "data/ii_suletud_fondid.csv"
+        if not os.path.exists(g):
+            raise SystemExit(0)
+        if not os.path.exists(c):
+            os.makedirs("data", exist_ok=True); shutil.copy(g, c); raise SystemExit(0)
+        with open(g, newline="") as f:
+            gr = list(csv.DictReader(f))
+        with open(c, newline="") as f:
+            r = csv.DictReader(f); cr = list(r); väljad = r.fieldnames
+        git_fondid = {x["kood"] for x in gr}
+        lisa = [x for x in cr if x["kood"] not in git_fondid]
+        read = sorted(gr + lisa, key=lambda x: (x["kood"], x["Kuupäev"]))
+        with open(c, "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=väljad or list(gr[0].keys())); w.writeheader(); w.writerows(read)
+        print(f"Arhiiv: Git {len(git_fondid)} fondi, cache'ist lisandus {len({x['kood'] for x in lisa})}")
+        EOF
 
     # Eelmine edukalt avaldatud komplekt: stage.mjs võtab sealt aruanderühma,
     # kui tänane render nurjus (töötav aruanne ei kao saidilt).
@@ -134,13 +166,21 @@ jobs:
         set -uo pipefail
         f=data/ii_suletud_fondid.csv
         [ -f "$f" ] || exit 0
-        git add "$f"
-        if git diff --cached --quiet; then echo "Arhiiv muutumatu"; exit 0; fi
-        git config user.name  "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git commit -m "data: suletud II samba fondide arhiiv $(date -u +%Y-%m-%d)"
-        if ! git pull --rebase --autostash; then git rebase --abort 2>/dev/null || true; fi
-        git push || echo "::warning::Arhiivi push ebaõnnestus (arhiiv on cache'is alles)"
+        # Eraldi worktree'is: tööpuu peab jääma renderdatud commit'i peale, et
+        # avaldatav HTML, CSS, ojs-lib ja Worker oleksid samast versioonist.
+        git config --global user.name  "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        wt="$RUNNER_TEMP/arhiiv-wt"
+        for katse in 1 2; do
+          rm -rf "$wt"; git worktree prune
+          git fetch -q origin main && git worktree add -q --detach "$wt" origin/main || break
+          mkdir -p "$wt/data" && cp "$f" "$wt/$f"
+          git -C "$wt" add "$f"
+          if git -C "$wt" diff --cached --quiet; then echo "Arhiiv muutumatu"; exit 0; fi
+          git -C "$wt" commit -q -m "data: suletud II samba fondide arhiiv $(date -u +%Y-%m-%d)"
+          git -C "$wt" push -q origin HEAD:main && exit 0
+        done
+        echo "::warning::Arhiivi push ebaõnnestus (arhiiv on cache'is alles)"
 
     # Avame turuülevaate päris brauseris: kui OJS-graafikud ei joonistu (nt
     # teegi või andmete viga), eemaldame lehe ja stage.mjs avaldab eelmise
@@ -157,14 +197,20 @@ jobs:
         srv=$!
         for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:8765/ && break; sleep 0.5; done
         # Kaks laiust: lauaarvuti ja mobiili kood on graafikutes eri harudes.
-        # Tühi DOM (Chrome puudub/aegus) = kontroll ei õnnestunud, mitte viga lehel.
+        # Kontroll peab mõlemal laiusel õnnestuma; kui Chrome ka teisel katsel
+        # tulemust ei anna, ei ole lehte kontrollitud ja avaldame eelmise.
         halb=0
         for laius in 1300 390; do
-          dom=$(timeout 90 google-chrome --headless=new --disable-gpu --no-sandbox \
-            --window-size=${laius},3000 --virtual-time-budget=30000 \
-            --dump-dom http://localhost:8765/turuylevaade.html 2>/dev/null || true)
+          dom=""
+          for katse in 1 2; do
+            dom=$(timeout 90 google-chrome --headless=new --disable-gpu --no-sandbox \
+              --window-size=${laius},3000 --virtual-time-budget=30000 \
+              --dump-dom http://localhost:8765/turuylevaade.html 2>/dev/null || true)
+            grep -q '</html>' <<<"$dom" && break
+          done
           if ! grep -q '</html>' <<<"$dom"; then
-            echo "::warning::Brauserikontroll ei õnnestunud (laius $laius) — jätan lehe alles"
+            echo "::warning::Brauserikontroll ei õnnestunud (laius $laius)"
+            halb=1
             continue
           fi
           # `|| true`: Actions käivitab bashi -e ja pipefail'iga; 0 vastet ≠ viga

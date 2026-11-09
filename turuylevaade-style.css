@@ -66,3 +66,33 @@ h2.anchored { scroll-margin-top: 20px; }
 /* Tootluse graafikute riskirühma pealkiri */
 h4.riskirühm { margin: 1.6rem 0 0.2rem; font-size: 1.05rem; }
 h4.riskirühm .allikas { font-weight: 400; display: inline; }
+
+/* Sissejuhatav rida (pealkirja all) */
+.lead-rida { color: var(--text-secondary); font-size: 1.02rem; margin: 0.2rem 0 1.2rem; }
+
+/* Juhtelemendid: ühe lahtri valikud ühes kompaktses kaardis, mitte iga valik eraldi */
+.cell-output-display .observablehq:has(> form) {
+  background: transparent; border: 0; padding: 0; margin: 2px 0;
+}
+div.cell:has(.observablehq > form):not(:has(svg[class^="plot-"])) {
+  background: var(--bg-white); border: 1px solid var(--border-light);
+  border-radius: 12px; padding: 10px 16px; margin: 10px 0 14px;
+}
+
+/* Avatavad lisavaated */
+details.lisa {
+  border: 1px solid var(--border-light); border-radius: 12px;
+  padding: 10px 16px; margin: 8px 0 26px; background: rgba(255, 255, 255, 0.5);
+}
+details.lisa > summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+details.lisa[open] > summary { margin-bottom: 10px; }
+
+/* Kitsa ekraani summad graafiku all */
+ul.summad { list-style: none; padding: 0; margin: 4px 0 8px; font-size: 0.86rem; }
+ul.summad li { margin-bottom: 4px; break-inside: avoid; }
+ul.summad .taht { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+
+/* Tabel: fondi nimi jääb kerimisel nähtavale */
+.fonditabel th:nth-child(2), .fonditabel td:nth-child(2) {
+  position: sticky; left: 0; background: var(--bg-white); z-index: 1;
+}

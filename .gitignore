@@ -83,3 +83,4 @@ _site/
 cache_ii_fondid.rds
 cache_fund_pev.rds
 cloudflare/last-good/
+*.tmp.mp4

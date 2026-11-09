@@ -61,9 +61,11 @@ for (const g of GROUPS) {
     g.files.forEach((f, i) => copy(lg[i], destOf(g.dir, f)));
     fallbacks++;
   } else {
-    // Varukoopiat pole (nt esimene jooks): avaldame olemasoleva, nagu varem
-    console.log(`::warning::${g.name}: puudub ${missing.join(", ")} ja varukoopiat pole — avaldan olemasoleva`);
-    for (const f of g.files) if (fs.existsSync(src(f))) copy(src(f), destOf(g.dir, f));
+    // Varukoopiat pole: `wrangler deploy` asendab kogu saidi, seega pooliku
+    // komplekti avaldamine kustutaks töötava aruande. Katkestame — sait jääb
+    // eelmisesse seisu ja jooks läheb punaseks.
+    console.log(`::error::${g.name}: puudub ${missing.join(", ")} ja varukoopiat pole — ei avalda midagi`);
+    process.exit(1);
   }
 }
 

@@ -244,9 +244,10 @@ if (!is.null(eelmine) && max(toores$Kuupäev) >= max(eelmine$Kuupäev)) {
   if (length(kadunud) > 3) {
     # Nii palju korraga ei sulgeta: tõenäoliselt on eksport ajutiselt vigane.
     # Eelmist seisu üle ei kirjuta, et järgmine jooks saaks uuesti otsustada.
-    message("::warning::Ekspordist puudub korraga ", length(kadunud),
-            " fondi — ei arhiveeri (", paste(kadunud, collapse = ", "), ")")
-    salvesta_eelmine <- FALSE
+    # Puuduvate fondide raha jääks muidu "suletud fondide" jäägiks ja
+    # turuosad oleksid valed: parem avaldada eelmine versioon.
+    stop("Ekspordist puudub korraga ", length(kadunud), " fondi (",
+         paste(kadunud, collapse = ", "), ") — eksport on tõenäoliselt vigane")
   } else if (length(kadunud) > 0) {
     # Upsert: kui fond on arhiivis (nt varasema ajutise kadumise tõttu), aga
     # eelmises seisus on tal pikem ajalugu, asendame arhiivi read.
@@ -288,6 +289,10 @@ while (length(kp_koik) > 2 && !paev_taielik(kp_koik[length(kp_koik)])) {
 }
 kuupaevad <- kp_koik
 viimane_kp <- max(kuupaevad)
+# Pensionikeskus avaldab iga tööpäev; pühade ajal võib vahe olla ~5 päeva.
+if (viimane_kp < today() - days(10)) {
+  stop("Viimased täielikud andmed on ", viimane_kp, " — eksport on vananenud")
+}
 
 # --- Paneel: iga fond iga päev tema eluea jooksul ----------------------------
 # Lünga päeval täidame taseme eelmise väärtusega, aga rahavoogu sel päeval ei
@@ -380,6 +385,11 @@ for (i in seq_along(kuupaevad)[-1]) {
   # Lünga või puuduva koguturu päeval on jääk ebausaldusväärne
   if (any(jaak$T_puudub[c(i - 1, i)]) || any(jaak$lunki[c(i - 1, i)], na.rm = TRUE)) jaagi_kadu <- 0
   V <- arh_kadu + jaagi_kadu
+  if (arh_kadu >= 1e6 && !any(jaak$T_puudub[c(i - 1, i)]) &&
+      j_d$R - R_p * j_d$g > 0.5 * arh_kadu) {
+    stop("Fond(id) ", paste(sulguvad$kood, collapse = ", "), " kadusid ekspordist ", d,
+         ", kuid ametlik koguturg sisaldab neid endiselt — tõenäoliselt ekspordiviga, mitte sulgemine")
+  }
   if (V < 1e6) next
 
   kand <- paneel0 %>%
@@ -435,11 +445,16 @@ paneel0 <- paneel0 %>%
 # Kui vastuvõtjad katsid ainult osa kadunud summast, on ülejäänu väljavool.
 katmine <- syndmused %>% group_by(Kuupäev) %>%
   summarise(kaetud = min(1, sum(ylekanne) / (first(arh_kadu) + first(jaagi_kadu))), .groups = "drop")
+# NB: transmute hindab avaldisi järjest, seega kadu ja turuefekt enne maht = 0.
+# Sulgemispäeval kasvab fond turuga (g) ja kogu väärtus läheb ühinemisse/välja,
+# nii et Δmaht = turuefekt + yhinemine + voog (sama eeldus kui arh_kadu-l).
 sulgemised <- lopetavad %>%
   left_join(rename(katmine, d = Kuupäev), by = "d") %>%
-  transmute(Kuupäev = d, kood, Fond, nimi, valitseja, tyyp, maht = 0, inv = 0, NAV = NA_real_,
-            kadu = -maht, kaetud = coalesce(kaetud, 0),
-            yhinemine = kadu * kaetud, voog = kadu * (1 - kaetud), turuefekt = 0) %>%
+  left_join(jaak %>% select(d = Kuupäev, g_d = g), by = "d") %>%
+  transmute(Kuupäev = d, kood, Fond, nimi, valitseja, tyyp,
+            kadu = -maht * coalesce(g_d, 1), turuefekt = maht * (coalesce(g_d, 1) - 1),
+            maht = 0, inv = 0, NAV = NA_real_, kaetud = coalesce(kaetud, 0),
+            yhinemine = kadu * kaetud, voog = kadu * (1 - kaetud)) %>%
   select(-kadu, -kaetud)
 
 # --- Jäägi jagamine kihtideks -------------------------------------------------
@@ -515,7 +530,7 @@ kihi_lopud <- if (nrow(kihid) == 0) tibble() else {
     left_join(select(jaak, Kuupäev, g), by = "Kuupäev") %>%
     left_join(kihi_kogujad %>% transmute(kood = paste0("_suletud_", kiht), inv_kiht, inv_viivitus), by = "kood") %>%
     # Kui kogujad jõudsid vastuvõtjasse päev hiljem, loeme neid ühinemispäeval veel siin
-    mutate(yhinemine = -maht * g, maht = 0, voog = 0, turuefekt = 0,
+    mutate(g = coalesce(g, 1), turuefekt = maht * (g - 1), yhinemine = -maht * g, maht = 0, voog = 0,
            inv = if_else(coalesce(inv_viivitus, FALSE), inv_kiht, 0)) %>%
     select(-g, -inv_kiht, -inv_viivitus)
 }
@@ -900,14 +915,19 @@ vv_halvim <- slice_min(vv_fond, neto_eur, n = 1, with_ties = FALSE)
 jargmine_vahetus <- function(paev) {
   a <- year(paev)
   kandidaadid <- list(
-    list(lopp = make_date(a, 3, 31),  vahetus = paste0("mai ", a, " alguses")),
-    list(lopp = make_date(a, 7, 31),  vahetus = paste0("septembri ", a, " alguses")),
-    list(lopp = make_date(a, 11, 30), vahetus = paste0("jaanuari ", a + 1, " alguses")),
-    list(lopp = make_date(a + 1, 3, 31), vahetus = paste0("mai ", a + 1, " alguses"))
+    list(lopp = make_date(a - 1, 11, 30), kp = make_date(a, 1, 1), vahetus = paste0("jaanuari ", a, " alguses")),
+    list(lopp = make_date(a, 3, 31),  kp = make_date(a, 5, 1), vahetus = paste0("mai ", a, " alguses")),
+    list(lopp = make_date(a, 7, 31),  kp = make_date(a, 9, 1), vahetus = paste0("septembri ", a, " alguses")),
+    list(lopp = make_date(a, 11, 30), kp = make_date(a + 1, 1, 1), vahetus = paste0("jaanuari ", a + 1, " alguses")),
+    list(lopp = make_date(a + 1, 3, 31), kp = make_date(a + 1, 5, 1), vahetus = paste0("mai ", a + 1, " alguses"))
   )
-  Filter(function(k) k$lopp >= paev, kandidaadid)[[1]]
+  # aken: avaldused, mida saab praegu esitada; ootel: tähtaeg möödas, vahetus veel tulemas
+  # (vahetus toimub kuu esimesel tööpäeval, seega arvestame nädala varuga)
+  ootel <- Filter(function(k) k$lopp < paev && paev <= k$kp + 6 &&
+                    !(k$kp %in% floor_date(vahetused$vahetus, "month")), kandidaadid)
+  list(aken = Filter(function(k) k$lopp >= paev, kandidaadid)[[1]],
+       ootel = if (length(ootel)) ootel[[length(ootel)]] else NULL)
 }
-# Avalduste aken, mis on täna lahti (vahetus toimub pärast akna lõppu)
 jargmine <- jargmine_vahetus(today())
 
 # Fondi maht ja kogujad vahetusele eelnenud andmepäeval (protsentuaalne vaade)
@@ -973,14 +993,8 @@ ojs_define(
 )
 ```
 
-::: {.hero-banner}
-## Kuhu liigub Eesti pensioniraha? {.unlisted}
-
-::: {.lead}
-Teise samba pensionifondide maht, kogujad, rahavood ja fondivahetused, igapäevaselt Pensionikeskuse andmetel.
-:::
-
-*Andmed seisuga `r fmt_kp(viimane_kp)`, uuenevad iga päev*
+::: {.lead-rida}
+Andmed seisuga **`r fmt_kp(viimane_kp)`**.
 :::
 
 ::: {.stats-grid .kpi}
@@ -995,35 +1009,19 @@ Teise samba pensionifondide maht, kogujad, rahavood ja fondivahetused, igapäeva
 <span class="stat-delta">`r fmt_delta(t_nyyd$osa_maht - t_eel$osa_maht, paste0(fmt_arv(t_nyyd$osa_maht - t_eel$osa_maht, 1), " pp"))` aastaga</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">`r fmt_pct(t_nyyd$osa_inv)`</span>
-<span class="stat-label">kogujatest indeksfondides</span>
-<span class="stat-delta">`r fmt_delta(t_nyyd$osa_inv - t_eel$osa_inv, paste0(fmt_arv(t_nyyd$osa_inv - t_eel$osa_inv, 1), " pp"))` aastaga</span>
-:::
-::: {.stat-card}
-<span class="stat-number">`r fmt_arv(t_nyyd$inv / 1000, 0)` tuh</span>
-<span class="stat-label">kogujat fondides</span>
-<span class="stat-delta">`r fmt_delta(t_nyyd$inv - t_eel$inv, fmt_arv(t_nyyd$inv - t_eel$inv))` aastaga</span>
-:::
-::: {.stat-card}
 <span class="stat-number">`r ifelse(voog12_indeks >= 0, "+", "")``r fmt_arv(voog12_indeks / 1e6)` mln €</span>
-<span class="stat-label">netovoog indeksfondidesse, 12 kuud</span>
+<span class="stat-label">netorahavoog indeksfondidesse 12 kuuga</span>
 <span class="stat-delta">aktiivsetesse `r fmt_delta(voog12_aktiivne, fmt_milj(voog12_aktiivne))`</span>
-:::
-::: {.stat-card}
-<span class="stat-number">`r fmt_pct(100 * t_nyyd$maht_tuleva / t_nyyd$maht)`</span>
-<span class="stat-label">Tuleva turuosa mahust</span>
-<span class="stat-delta">`r fmt_delta(100 * (t_nyyd$maht_tuleva / t_nyyd$maht - t_eel$maht_tuleva / t_eel$maht), paste0(fmt_arv(100 * (t_nyyd$maht_tuleva / t_nyyd$maht - t_eel$maht_tuleva / t_eel$maht), 1), " pp"))` aastaga</span>
 :::
 :::
 
 ::: {.kokkuvote}
 **Lühidalt**
 
-- Teise samba fondides on **`r fmt_mld(t_nyyd$maht)`**`r if (!is.na(kogujad_unik)) paste0(" ja **", fmt_arv(kogujad_unik), "** kogujat (fondide kaupa kokku ", fmt_arv(t_nyyd$inv), ", sest osa inimesi on mitmes fondis)") else paste0(" ja **", fmt_arv(t_nyyd$inv), "** kogujat")`. Viimase 12 kuuga `r if (t_nyyd$maht >= t_eel$maht) "kasvas" else "kahanes"` maht `r fmt_milj(abs(t_nyyd$maht - t_eel$maht))`, millest **`r fmt_milj(turuefekt12)`** tuli fondide tootlusest ja **`r fmt_milj(voog12_kokku)`** uue raha netovoost (sissemaksed miinus väljamaksed).
-- Indeksfondides on **`r fmt_pct(t_nyyd$osa_maht)`** rahast ja **`r fmt_pct(t_nyyd$osa_inv)`** kogujatest; aasta tagasi vastavalt `r fmt_pct(t_eel$osa_maht)` ja `r fmt_pct(t_eel$osa_inv)`.
-- Suurim fondivalitseja on **`r valitsejad_nyyd$valitseja[1]`** (`r fmt_pct(valitsejad_nyyd$osa[1])` mahust), järgnevad `r valitsejad_nyyd$valitseja[2]` (`r fmt_pct(valitsejad_nyyd$osa[2])`) ja `r valitsejad_nyyd$valitseja[3]` (`r fmt_pct(valitsejad_nyyd$osa[3])`).
-`r if (!is.na(viimane_vahetus)) paste0("- Viimases fondivahetuses (", fmt_kp(viimane_vahetus), ") liikus fondide vahel **", fmt_milj(vv_kokku_eur, 1), "**. Enim võitis **", vv_parim$nimi, "** (", fmt_milj(vv_parim$neto_eur, 1), " neto), enim kaotas **", vv_halvim$nimi, "** (", fmt_milj(vv_halvim$neto_eur, 1), ").") else ""`
-`r if (!is.null(jargmine)) paste0("- Järgmine vahetus: avaldused kuni **", fmt_kp(jargmine$lopp), "**, vahetus toimub ", jargmine$vahetus, ".") else ""`
+- Teise samba fondides on **`r fmt_mld(t_nyyd$maht)`**`r if (!is.na(kogujad_unik)) paste0(" ja **", fmt_arv(kogujad_unik), "** kogujat") else ""`. Viimase 12 kuuga `r if (t_nyyd$maht >= t_eel$maht) "kasvas" else "kahanes"` maht `r fmt_milj(abs(t_nyyd$maht - t_eel$maht))`: **`r fmt_milj(turuefekt12)`** tuli fondide tootlusest ja **`r fmt_milj(voog12_kokku)`** netorahavoost (sissemaksed miinus väljamaksed, sh liikumine pensioni investeerimiskontodele ja tagasi).
+- Indeksfondides on **`r fmt_pct(t_nyyd$osa_maht)`** rahast (aasta tagasi `r fmt_pct(t_eel$osa_maht)`). Suurim fondivalitseja on **`r valitsejad_nyyd$valitseja[1]`** (`r fmt_pct(valitsejad_nyyd$osa[1])` mahust), järgnevad `r valitsejad_nyyd$valitseja[2]` (`r fmt_pct(valitsejad_nyyd$osa[2])`) ja `r valitsejad_nyyd$valitseja[3]` (`r fmt_pct(valitsejad_nyyd$osa[3])`).
+`r if (!is.na(viimane_vahetus)) paste0("- Viimases fondivahetuses (", fmt_kp(viimane_vahetus), ") vahetati **", fmt_milj(vv_kokku_eur, 1), "** ulatuses. Enim võitis **", vv_parim$nimi, "** (", fmt_milj(vv_parim$neto_eur, 1), " neto), enim kaotas **", vv_halvim$nimi, "** (", fmt_milj(vv_halvim$neto_eur, 1), ").") else ""`
+`r paste0("- ", if (!is.null(jargmine$ootel)) paste0("Järgmine vahetus toimub ", jargmine$ootel$vahetus, " (selle avaldused on juba esitatud). ") else "", "Uusi vahetusavaldusi saab esitada kuni **", fmt_kp(jargmine$aken$lopp), "**, vahetus toimub ", jargmine$aken$vahetus, ".")`
 :::
 
 ```{ojs}
@@ -1063,7 +1061,7 @@ valitsejaVarv = {
   return {domain: valitsejad, range: valitsejad.map(v => tuntud[v] ?? lisa[i++ % lisa.length])};
 }
 tyybid = ["Indeks", "Aktiivne", "Investeerimiskonto"]
-tyypVarv = ({domain: tyybid, range: ["#B07D4F", "#8A8580", "#D9CBB8"]})
+tyypVarv = ({domain: tyybid, range: ["#B07D4F", "#5F5A55", "#D9CBB8"]})
 pos = "#2E7D4F"
 neg = "#B23A2E"
 stiil = ({fontFamily: "Inter, 'Helvetica Neue', sans-serif", fontSize: "12px", background: "transparent", color: "#2D2A26"})
@@ -1113,7 +1111,7 @@ function ribagraafik({andmed, v, silt, title, caption, xFmt, color, stroke}) {
 
 ## Indeksfondid vs aktiivsed fondid
 
-Indeksfondid järgivad passiivselt mõnda turuindeksit ja nende tasud on kordades väiksemad. Kui suur osa teisest sambast on juba nendes?
+Indeksfondid järgivad passiivselt mõnda turuindeksit ja nende tasud on üldjuhul madalamad. Kui suur osa teisest sambast on juba nendes?
 
 ```{ojs}
 viewof aMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {value: "maht", label: "Näita"})
@@ -1156,10 +1154,10 @@ viewof aKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {val
 ```
 
 ::: {.allikas}
-Raha: kõigi fondide maht, sh suletud ja hiljem ühendatud fondid (Pensionikeskuse koguturg). Kogujad: fondide aktiivsete investorite summa (mitmes fondis olev inimene loetakse mitu korda); suletud fondide kogujate arv enne ühinemist on hinnatud ühinemispäeva kogujate hüppe järgi. 16.12.2021 langus on 2021. aasta pensionireformi järel lahkunute osakute tühistamine: aktiivsed fondid kaotasid siis 24 %, indeksfondid 8 % kogujatest.
+Raha: kõigi fondide maht, sh suletud ja hiljem ühendatud fondid (Pensionikeskuse koguturg). Kogujad: fondide aktiivsete investorite summa. Inimene, kellel on osakuid mitmes fondis, on loetud mitu korda, seega see ei ole inimeste arv. Suletud fondide kogujate arv enne ühinemist on hinnatud ühinemispäeva kogujate hüppe järgi. 16.12.2021 langus on 2021. aasta pensionireformi järel lahkunute osakute tühistamine: aktiivsed fondid kaotasid siis ligi veerandi, indeksfondid umbes 8 % kogujatest.
 :::
 
-### Kes võidab indeksfondide turul?
+### Indeksfondide turuosad
 
 ```{ojs}
 viewof iMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {value: "maht", label: "Näita"})
@@ -1173,7 +1171,14 @@ viewof iMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {
   const viimaneKp = d3.max(andmed, d => d.kp);
   const lopp = andmed.filter(d => +d.kp === +viimaneKp).sort((a, b) => b.osa - a.osa);
   const nimed = lopp.map(d => d.nimi);
-  const varvid = nimed.map(n => valitsejaVarv.range[valitsejaVarv.domain.indexOf(andmed.find(d => d.nimi === n).valitseja)]);
+  // Sama valitseja mitu fondi: iga järgmine heledamas toonis, et jooned eristuksid
+  const mitmes = new Map();
+  const varvid = nimed.map(n => {
+    const v = andmed.find(d => d.nimi === n).valitseja, k = mitmes.get(v) ?? 0;
+    mitmes.set(v, k + 1);
+    const c = d3.color(valitsejaVarv.range[valitsejaVarv.domain.indexOf(v)]);
+    return k === 0 ? c.formatHex() : d3.interpolateRgb(c, "#ffffff")(0.45 * k);
+  });
   // Siltide kattumise vältimine: vähemalt ~14 px vahe (y-ühikutes)
   const ymax = d3.max(andmed, d => d.osa), vahe = ymax * 14 / 300;
   let eelmine = Infinity;
@@ -1183,10 +1188,10 @@ viewof iMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {
     width, height: 380, marginLeft: 44, marginRight: kitsas ? 12 : 230, style: stiil,
     x: {label: null, type: "utc"},
     y: {label: null, tickFormat: d => `${f0(d * 100)} %`, grid: true},
-    color: {domain: nimed, range: varvid, legend: kitsas},
+    color: {domain: nimed, range: varvid, legend: kitsas, tickFormat: n => `${n} ${f1(100 * lopp.find(d => d.nimi === n).osa)} %`},
     marks: [
       Plot.lineY(andmed, {x: "kp", y: "osa", stroke: "nimi", strokeWidth: d => d.nimi.startsWith("Tuleva") ? 2.6 : 1.6}),
-      kitsas ? null : Plot.text(lopp, {x: "kp", y: "ySilt", text: d => `${d.nimi} ${f1(100 * d.osa)} %`, fill: "nimi", textAnchor: "start", dx: 6, fontSize: 11}),
+      kitsas ? null : Plot.text(lopp, {x: "kp", y: "ySilt", text: d => `${d.nimi} ${f1(100 * d.osa)} %`, fill: "#2D2A26", textAnchor: "start", dx: 6, fontSize: 11}),
       Plot.tip(andmed, Plot.pointer({x: "kp", y: "osa", title: d => `${d.nimi}\n${+d.kp === +viimaneKp ? "viimane seis " + fkp(d.kp) : fkuu(d.kp)}: ${f1(100 * d.osa)} % indeksfondide ${iMoodik === "maht" ? "rahast" : "kogujatest"}`}))
     ]
   })
@@ -1218,7 +1223,8 @@ viewof vKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {val
     width, height: 400, marginLeft: 64, style: stiil,
     x: {label: null, type: "utc"},
     y: {label: null, tickFormat: yFmt, grid: true},
-    color: {domain: jarjekord, range: jarjekord.map(v => valitsejaVarv.range[valitsejaVarv.domain.indexOf(v)]), legend: true},
+    color: {domain: jarjekord, range: jarjekord.map(v => valitsejaVarv.range[valitsejaVarv.domain.indexOf(v)]), legend: true,
+      tickFormat: v => { const d = andmed.find(x => +x.kp === +viimaneKp && x.valitseja === v); return d ? `${v} ${f1(100 * d.osa)} %` : v; }},
     marks: [
       Plot.areaY(andmed, {x: "kp", y: "y", fill: "valitseja", order: jarjekord, fillOpacity: 0.88}),
       Plot.ruleY([0]),
@@ -1230,12 +1236,12 @@ viewof vKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {val
 ```
 
 ::: {.allikas}
-Suletud fondide maht enne ühinemist on arvestatud selle valitseja alla, kelle fondiga need ühendati (vt metoodika).
+Legendis on viimane turuosa. Ajalugu on tagantjärele ühtlustatud: suletud fondide maht enne ühinemist on arvestatud selle valitseja alla, kelle fondiga need ühendati, ja on osaliselt hinnanguline (vt metoodika). Kogujad on fondide kaupa kokku liidetud.
 :::
 
 ## Kuhu raha liigub?
 
-Fondi maht muutub kahel põhjusel: **fondi tootlus** (turud tõusevad või langevad) ja **rahavoog** ehk sissemaksed, väljamaksed ja fondivahetused. Mahu muutusest ei saa seda eristada: kui turud langevad, kahaneb iga fondi maht, isegi kui raha juurde voolab. Allpool on fondi tootluse mõju (NAV-i muutus) maha arvatud, et näha ainult rahavoogu.
+Fondi maht muutub kahel põhjusel: **fondi tootlus** (turud tõusevad või langevad) ja **rahavoog** ehk sissemaksed, väljamaksed ja fondivahetused. Mahu muutusest neid ei eristu: kui turud langevad, võib fondi maht kahaneda ka siis, kui raha juurde voolab. Allpool on fondi tootluse mõju (NAV-i muutus) maha arvatud, et näha ainult rahavoogu. Suletud fondide varasem tootlus ja rahavood on osaliselt hinnangulised.
 
 ```{ojs}
 viewof rGrupp = Inputs.radio(new Map([["Fondi tüüp", "tyyp"], ["Fondivalitseja", "valitseja"]]), {value: "valitseja", label: "Grupeeri"})
@@ -1263,7 +1269,7 @@ voogGrupp = {
 }
 ```
 
-### Kuhu on raha kokku liikunud
+### Netorahavoog perioodi algusest
 
 ```{ojs}
 {
@@ -1280,7 +1286,7 @@ voogGrupp = {
     read.push({g, kuu: algus, y: 0, eur: 0});
     for (const d of v) {
       s += d.voog;
-      read.push({g, kuu: d3.utcMonth.offset(d.kuu, 1), y: pct ? 100 * s / baas : s, eur: s, pooleli: d.pooleli});
+      read.push({g, kuu: d.pooleli ? kp(andmedKuni) : d3.utcMonth.offset(d.kuu, 1), y: pct ? 100 * s / baas : s, eur: s, pooleli: d.pooleli});
     }
   }
   const lopp = d3.groups(read, d => d.g).map(([g, v]) => v[v.length - 1]);
@@ -1292,10 +1298,10 @@ voogGrupp = {
   const sildid = d3.sort(lopp, d => -d.y).map(d => ({...d, ly: d.y}));
   for (let i = 1; i < sildid.length; i++) sildid[i].ly = Math.min(sildid[i].ly, sildid[i - 1].ly - vahe);
   const fmt = pct ? (x => `${fpm(x)} %`) : (x => mlnpm(x));
-  return Plot.plot({
+  const graafik = Plot.plot({
     width, height: korgus, marginLeft: pct ? 52 : 70, marginRight: kitsas ? 10 : 150, style: stiil,
     caption: `Netorahavoog kokku alates ${fkuu(algus)}${pct ? ", protsendina grupi mahust perioodi alguses (näitab, kui palju fond on rahavoo arvel kasvanud)" : ""}. ${pooleliTekst}` +
-      (valja.length ? ` Perioodi alguses puudunud: ${valja.join(", ")}.` : ""),
+      (valja.length ? ` Protsendina pole näidatud (perioodi alguses alla 5 mln €): ${valja.join(", ")}.` : ""),
     x: {label: null, type: "utc"},
     y: {label: null, tickFormat: pct ? (d => `${f0(d)} %`) : (d => `${f0(d / 1e6)} mln €`), grid: true},
     color: {domain: [...jarjekord, "Kogu turg"].filter(g => !valja.includes(g)), range: [...varvid, "#9A948C"].filter((_, i) => !valja.includes([...jarjekord, "Kogu turg"][i])), legend: true},
@@ -1303,16 +1309,27 @@ voogGrupp = {
       Plot.ruleY([0], {stroke: "#2D2A26", strokeOpacity: 0.5}),
       Plot.lineY(read.filter(d => d.g !== "Kogu turg"), {x: "kuu", y: "y", stroke: "g", strokeWidth: 2.2}),
       Plot.lineY(read.filter(d => d.g === "Kogu turg"), {x: "kuu", y: "y", stroke: "g", strokeWidth: 1.5, strokeDasharray: "4,3"}),
-      kitsas ? null : Plot.text(sildid, {x: "kuu", y: "ly", fill: "g", text: d => `${d.g} ${fmt(d.y)}`,
-        textAnchor: "start", dx: 6, fontSize: 11, fontWeight: 600}),
+      Plot.dot(lopp, {x: "kuu", y: "y", fill: "g", r: 3.5}),
+      kitsas ? null : Plot.text(sildid, {x: "kuu", y: "ly", fill: "#2D2A26", text: d => `${d.g} ${fmt(d.y)}`,
+        textAnchor: "start", dx: 8, fontSize: 11, fontWeight: 600}),
       Plot.tip(read.filter(d => d.kuu > algus), Plot.pointer({x: "kuu", y: "y", stroke: "g",
-        title: d => `${d.g}\nkokku ${fkuu(d3.utcMonth.offset(d.kuu, -1))} lõpuni: ${mlnpm(d.eur)}${pct ? ` (${fpm(d.y)} %)` : ""}${d.pooleli ? "\n(viimane kuu pooleli)" : ""}`}))
+        title: d => `${d.g}\nkokku ${d.pooleli ? fkp(d.kuu) : fkuu(d3.utcMonth.offset(d.kuu, -1)) + " lõpu"}ni: ${mlnpm(d.eur)}${pct ? ` (${fpm(d.y)} %)` : ""}`}))
     ]
   });
+  if (!kitsas) return graafik;
+  // Kitsal ekraanil pole joonte otsas ruumi: summad graafiku all
+  const varv = g => graafik.scale("color").apply(g);
+  return html`<div>${graafik}<ul class="summad">${sildid.map(d => html`<li><span class="taht" style="background:${varv(d.g)}"></span>${d.g}: <b>${fmt(d.y)}</b></li>`)}</ul></div>`;
 }
 ```
 
-### Kuude kaupa
+::: {.allikas}
+Netorahavoog = sissemaksed, väljamaksed ja vahetused kokku, sh liikumine pensioni investeerimiskontodele ja tagasi. Ühinemisel üle kantud vara on rahavoost välja jäetud. Suured väljavoolud 2021–2023 on pensionireformi järgsed raha väljavõtmised; vahetuste kuudel (jaanuar, mai, september) liigub raha fondide vahel.
+:::
+
+<details class="lisa">
+<summary>Kuude kaupa</summary>
+
 
 ```{ojs}
 {
@@ -1325,15 +1342,15 @@ voogGrupp = {
   const kitsas = width < 600;
   const sumTekst = g => mlnpm(d3.sum(andmed.filter(d => d.g === g), d => d.voog));
   return Plot.plot({
-    width, height: paneelid.length * (kitsas ? 96 : 88) + 50, marginLeft: kitsas ? 52 : 64, marginRight: kitsas ? 8 : 150, style: stiil,
-    caption: `Iga kuu netorahavoog ${pct ? "protsendina grupi mahust kuu alguses" : "eurodes"}; paneeli kõrval perioodi summa. Kõigil paneelidel sama skaala. ${pooleliTekst}`,
-    fy: {label: null, domain: paneelid, axis: null, padding: 0.2},
+    width, height: paneelid.length * (kitsas ? 104 : 88) + 50, marginLeft: kitsas ? 52 : 64, marginRight: kitsas ? 8 : 150, marginTop: kitsas ? 26 : 20, style: stiil,
+    caption: `Iga kuu netorahavoog ${pct ? "protsendina grupi mahust kuu alguses" : "eurodes"}; paneeli juures perioodi summa. Kõigil paneelidel sama skaala. ${pooleliTekst}`,
+    fy: {label: null, domain: paneelid, axis: null, padding: kitsas ? 0.32 : 0.2},
     x: {label: null, type: "utc"},
     y: {label: null, tickFormat: pct ? (d => `${f1(d)} %`) : (d => `${f0(d / 1e6)} mln`), grid: true, ticks: 3},
     marks: [
       Plot.frame({stroke: "#E8E4DF"}),
       Plot.text(paneelid, {fy: d => d, text: d => kitsas ? `${d}: ${sumTekst(d)}` : d, frameAnchor: kitsas ? "top-left" : "right",
-        dx: kitsas ? 4 : 8, dy: kitsas ? 4 : -8, fontSize: 11, fontWeight: 600, textAnchor: "start"}),
+        dx: kitsas ? 0 : 8, dy: kitsas ? -9 : -8, fontSize: 11, fontWeight: 600, textAnchor: "start", lineAnchor: kitsas ? "bottom" : "middle"}),
       kitsas ? null : Plot.text(paneelid, {fy: d => d, text: d => sumTekst(d), frameAnchor: "right", dx: 8, dy: 8,
         fontSize: 11, fill: "#5A554F", textAnchor: "start"}),
       Plot.rectY(andmed, {fy: "g", x: "kuu", interval: "month", y: v, fill: d => d.voog >= 0 ? pos : neg,
@@ -1346,16 +1363,15 @@ voogGrupp = {
 }
 ```
 
-::: {.allikas}
-Netorahavoog = sissemaksed, väljamaksed ja vahetused kokku. Fondide ühinemised pole rahavoog ja on siit välja jäetud. Suured väljavoolud 2021–2023 on pensionireformi järgsed raha väljavõtmised; vahetuste kuudel (jaanuar, mai, september) liigub raha fondide vahel.
-:::
+</details>
 
 ### Fondide kaupa
 
 ```{ojs}
 viewof fAken = Inputs.select(new Map([["viimane kuu", 1], ["viimased 3 kuud", 3], ["viimased 6 kuud", 6], ["viimased 12 kuud", 12]]), {value: 12, label: "Periood"})
 viewof fNaita = Inputs.radio(new Map([["Netovoog", "voog"], ["Mahu muutus kokku", "muutus"], ["Kogujate muutus", "inv_muutus"]]), {value: "voog", label: "Näita"})
-viewof fUhik = Inputs.radio(new Map([["absoluutne", "abs"], ["% algusest", "pct"]]), {value: "abs", label: "Ühik"})
+viewof fUhik = Inputs.radio(new Map([["absoluutne", "abs"], ["% perioodi alguse mahust", "pct"]]), {value: "abs", label: "Ühik"})
+viewof fKoik = Inputs.toggle({label: "Kõik fondid", value: false})
 ```
 
 ```{ojs}
@@ -1367,17 +1383,19 @@ viewof fUhik = Inputs.radio(new Map([["absoluutne", "abs"], ["% algusest", "pct"
     .map(d => ({...d, muutus: d.maht_lopp - d.maht_alg}))
     .map(d => ({...d, abs: fNaita === "muutus" ? d.muutus : d[fNaita]}))
     .map(d => ({...d, v: d.abs == null ? null : pct ? (alus(d) > 0 ? 100 * d.abs / alus(d) : null) : d.abs}));
-  const andmed = koik.filter(d => d.v !== null && !Number.isNaN(d.v));
+  const koikV = koik.filter(d => d.v !== null && !Number.isNaN(d.v));
+  const andmed = tippJaPohi(koikV, "v", fKoik);
   const valja = koik.filter(d => d.v === null).map(d => d.nimi);
   const algus = andmed.length ? andmed[0].algus : "";
-  const sumAbs = d3.sum(andmed, d => d.abs), sumAlus = d3.sum(andmed, d => alus(d));
+  const sumAbs = d3.sum(koikV, d => d.abs), sumAlus = d3.sum(koikV, d => alus(d));
   const kokkuTekst = pct ? (sumAlus > 0 ? `${fpm(100 * sumAbs / sumAlus)} % (fondid, mis olid olemas perioodi alguses)` : "–")
     : fNaita === "inv_muutus" ? f0(sumAbs) + " kogujat" : mlnpm(sumAbs);
   return ribagraafik({
     andmed, v: "v",
     silt: pct ? (d => `${fpm(d.v)} %`) : fNaita === "inv_muutus" ? (d => (d.v > 0 ? "+" : "") + f0(d.v)) : (d => mlnpm(d.v)),
     caption: `${algus.split("-").reverse().join(".")} – ${andmedKuni.split("-").reverse().join(".")}; kokku ${kokkuTekst}` +
-      (valja.length ? `. Perioodi jooksul loodud fondid pole protsendina võrreldavad: ${valja.join(", ")}.` : ""),
+      (valja.length ? `. Perioodi jooksul loodud fondid pole protsendina võrreldavad: ${valja.join(", ")}` : "") +
+      (andmed.length < koikV.length ? `. Näidatud on ${andmed.length / 2} suurimat ja väiksemat ${koikV.length} fondist` : "") + ".",
     xFmt: pct ? (d => `${f0(d)} %`) : fNaita === "inv_muutus" ? (d => f0(d)) : (d => `${f0(d / 1e6)} mln`),
     color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2), legend: true},
     stroke: d => d.nimi.startsWith("Tuleva") ? "#00AEEA" : "none",
@@ -1389,6 +1407,151 @@ viewof fUhik = Inputs.radio(new Map([["absoluutne", "abs"], ["% algusest", "pct"
 ::: {.allikas}
 Netovoog = mahu muutus miinus fondi tootluse mõju (päevade kaupa: maht~t~ − maht~t−1~ × NAV~t~ / NAV~t−1~). Fondide ühinemisel üle tulnud raha on eraldi real „ühinemine”, mitte netovoos.
 :::
+
+## Fondivahetused
+
+Juba kogutud raha (osakuid) saab teise fondi vahetada kolm korda aastas. Avaldused esitatakse perioodil, mis lõpeb 31. märtsil, 31. juulil või 30. novembril, ja vahetus toimub vastavalt mai, septembri või jaanuari alguses. Kuna kõik vahetused toimuvad samal päeval, on näha täpselt, kuhu raha liikus. Tulevaste sissemaksete suunamine teise fondi jõustub kohe ja seda siin ei näe.
+
+```{ojs}
+perioodid = Array.from(new Set(vahetusedD.map(d => d.vahetus))).sort().reverse()
+viewof vPeriood = perioodid.length ? Inputs.select(perioodid, {value: perioodid[0], label: "Vahetus", width: 420, format: p => {
+  const r = vahetusedD.find(d => d.vahetus === p);
+  return `${fkp(kp(p))} (avaldused ${fkp(kp(r.avaldus_algus))}–${fkp(kp(r.avaldus_lopp))})`;
+}}) : Inputs.input(null)
+viewof vMoot = Inputs.radio(new Map([["Raha", "eur"], ["% fondi mahust", "pct"], ["Vahetajate arv", "arv"]]), {value: "eur", label: "Näita"})
+viewof vKoik = Inputs.toggle({label: "Kõik fondid", value: false})
+vMootTekst = ({eur: "Netotulemus eurodes (tulnud miinus lahkunud raha)", pct: "Netotulemus protsendina fondi mahust enne vahetust", arv: "Tulnud miinus lahkunud vahetusavalduste arv"})
+// Pikk nimekiri: vaikimisi ainult suurimad võitjad ja kaotajad
+tippJaPohi = (andmed, v, koik, n = 6) => koik || andmed.length <= 2 * n ? andmed
+  : [...d3.sort(andmed, d => -d[v]).slice(0, n), ...d3.sort(andmed, d => d[v]).slice(0, n)]
+```
+
+```{ojs}
+{
+  if (!vPeriood) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
+  const per = vahetusedD.filter(d => d.vahetus === vPeriood)
+    .map(d => ({...d, neto_pct: d.maht_enne >= pctMinAlus ? 100 * d.neto_eur / d.maht_enne : null}));
+  const v = {eur: "neto_eur", pct: "neto_pct", arv: "neto"}[vMoot];
+  const arv = d3.sum(per, d => d.lahkus), raha = d3.sum(per, d => d.lahkus_eur);
+  // Protsendivaates jäävad välja investeerimiskontod (nende mahtu ei avaldata)
+  const koik = per.filter(d => d.tuli + d.lahkus > 0 && d[v] !== null);
+  const andmed = tippJaPohi(koik, v, vKoik);
+  return ribagraafik({
+    andmed, v,
+    silt: d => vMoot === "eur" ? mlnpm(d[v]) : vMoot === "pct" ? `${fpm(d[v])} %` : (d[v] > 0 ? "+" : "") + f0(d[v]),
+    caption: `${vMootTekst[vMoot]}. Fondide ja pensioni investeerimiskontode vahel liikus ${mln(raha)}; fondidest lahkuti ${f0(arv)} avaldusega.` +
+      (vMoot === "pct" ? " Investeerimiskontode mahtu ei avaldata, need pole protsendivaates sees." : "") +
+      (andmed.length < koik.length ? ` Näidatud on ${andmed.length / 2} suurimat võitjat ja kaotajat ${koik.length} fondist.` : ""),
+    xFmt: vMoot === "eur" ? (d => `${f0(d / 1e6)} mln`) : vMoot === "pct" ? (d => `${f1(d)} %`) : (d => f0(d)),
+    color: {...tyypVarv, legend: true},
+    stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "none",
+    title: d => `${d.nimi}\ntuli ${f0(d.tuli)} korral (${mln(d.tuli_eur)})\nlahkuti ${f0(d.lahkus)} korral (${mln(d.lahkus_eur)})\nneto ${(d.neto > 0 ? "+" : "") + f0(d.neto)}, ${mlnpm(d.neto_eur)}${d.neto_pct !== null && d.neto_pct !== undefined ? ` (${fpm(d.neto_pct)} % fondi mahust)` : ""}`
+  });
+}
+```
+
+::: {.allikas}
+Vahetajate arv on fondide kaupa kokku liidetud: kui inimene jagas osakud mitme fondi vahel või vahetas mitmest fondist, on ta loetud mitu korda. See ei ole unikaalsete inimeste arv. Pensioni investeerimiskonto (PIK) on samuti vahetuse sihtkoht ja on siin eraldi real.
+:::
+
+<details class="lisa">
+<summary>Vahetuste ajalugu ja ühe fondi vahetused</summary>
+
+#### Vahetuste ajalugu
+
+Iga vahetuse netotulemus eraldi paneelil, ühise skaalaga. Mõõdik (raha, % mahust või vahetajate arv) valitakse ülemise graafiku juures.
+
+```{ojs}
+viewof hGrupp = Inputs.radio(new Map([["Fondivalitseja", "valitseja"], ["Fondi tüüp", "tyyp"]]), {value: "valitseja", label: "Paneelid"})
+```
+
+```{ojs}
+{
+  if (!vahetusedD.length) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
+  const pct = vMoot === "pct";
+  const v = vMoot === "arv" ? "neto" : "neto_eur";
+  // Protsendivaates: grupi netotulemus tema mahust enne vahetust (ilma inv.kontodeta)
+  // Protsent: grupi netotulemus tema mahust enne vahetust (ilma inv.kontodeta).
+  // Kui mõne fondi maht enne vahetust pole teada (nt hiljem suletud fond), jätame
+  // grupi protsendi arvutamata: osalise grupi protsent võib näidata vale märki.
+  const grupiPct = g => {
+    if (g.some(d => d.maht_enne == null && d.neto_eur !== 0)) return null;
+    const m = d3.sum(g, d => d.maht_enne);
+    return m >= pctMinAlus ? 100 * d3.sum(g, d => d.neto_eur) / m : null;
+  };
+  const koik = d3.flatRollup(pct ? vahetusedD.filter(d => d.tyyp !== "Investeerimiskonto") : vahetusedD,
+      g => pct ? grupiPct(g) : d3.sum(g, d => d[v]), d => d.vahetus, d => d[hGrupp])
+    .map(([p, g, neto]) => ({p: kp(p), g, neto}));
+  const andmed = koik.filter(d => d.neto !== null);
+  const puudu = koik.length - andmed.length;
+  // Paneelide järjekord: suurim kogu-netovõitja üleval
+  const jarjekord = d3.groupSort(andmed, g => -d3.sum(g, d => d.neto), d => d.g);
+  const yFmt = vMoot === "eur" ? (d => `${f0(d / 1e6)} mln`) : pct ? (d => `${f0(d)} %`) : (d => f0(d));
+  const kitsas = width < 600;
+  return Plot.plot({
+    width, height: jarjekord.length * (kitsas ? 104 : 80) + 50, marginLeft: kitsas ? 52 : 64, marginRight: kitsas ? 8 : 130, marginTop: kitsas ? 26 : 20, style: stiil,
+    caption: [vMootTekst[vMoot] + ".",
+      puudu ? `${puudu} vahetuse tulemust pole protsendina näidatud, sest mõne fondi maht enne vahetust pole teada (fond on hiljem suletud) või grupp oli alla 5 mln €.` : "",
+      puuduvadPerioodid.length ? `NB! Puuduvad vahetused: ${puuduvadPerioodid.map(p => fkp(kp(p))).join(", ")} (andmed ei laadinud).` : ""].filter(Boolean).join(" "),
+    fy: {label: null, domain: jarjekord, axis: kitsas ? null : "right", padding: kitsas ? 0.32 : 0.18},
+    x: {label: null, type: "band", padding: 0.12, tickSize: 0,
+        tickFormat: d => d.getUTCMonth() === 0 && (width >= 600 || d.getUTCFullYear() % 2 === 0) ? String(d.getUTCFullYear()) : ""},
+    y: {label: null, tickFormat: yFmt, grid: true, ticks: 3},
+    marks: [
+      Plot.frame({stroke: "#E8E4DF"}),
+      kitsas ? Plot.text(jarjekord, {fy: d => d, text: d => d, frameAnchor: "top-left", dy: -9, lineAnchor: "bottom", textAnchor: "start", fontSize: 11, fontWeight: 600}) : null,
+      Plot.barY(andmed, {fy: "g", x: "p", y: "neto", fill: d => d.neto >= 0 ? pos : neg, fillOpacity: 0.85}),
+      Plot.ruleY([0], {stroke: "#2D2A26"}),
+      Plot.tip(andmed, Plot.pointer({fy: "g", x: "p", y: "neto",
+        title: d => `${d.g} – vahetus ${fkp(d.p)}\nneto ${vMoot === "eur" ? mlnpm(d.neto) : pct ? fpm(d.neto) + " % mahust" : (d.neto > 0 ? "+" : "") + f0(d.neto)}`}))
+    ]
+  });
+}
+```
+
+#### Ühe fondi vahetused
+
+```{ojs}
+fondiNimed = Array.from(new Set(vahetusedD.filter(d => d.tyyp !== "Investeerimiskonto").map(d => d.nimi))).sort((a, b) => a.localeCompare(b, "et"))
+viewof hFond = fondiNimed.length ? Inputs.select(fondiNimed, {value: fondiNimed.find(n => n.startsWith("Tuleva Maailma A")) ?? fondiNimed[0], label: "Fond", width: 320}) : Inputs.input(null)
+```
+
+```{ojs}
+{
+  if (!hFond) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
+  const pct = vMoot === "pct", arv = vMoot === "arv";
+  const rida = vahetusedD.filter(d => d.nimi === hFond).sort((a, b) => a.vahetus.localeCompare(b.vahetus));
+  const val = (d, x) => arv ? d[x] : pct ? (d.maht_enne >= pctMinAlus ? 100 * d[x + "_eur"] / d.maht_enne : null) : d[x + "_eur"];
+  const andmed = rida.map(d => ({p: kp(d.vahetus), tuli: val(d, "tuli"), lahkus: val(d, "lahkus"),
+    neto: arv ? d.neto : pct ? (d.maht_enne >= pctMinAlus ? 100 * d.neto_eur / d.maht_enne : null) : d.neto_eur}))
+    .filter(d => d.neto !== null);
+  const pikk = andmed.flatMap(d => [{p: d.p, liik: "Tuli", y: d.tuli}, {p: d.p, liik: "Lahkus", y: -d.lahkus}]);
+  const fmt = arv ? (x => (x > 0 ? "+" : "") + f0(x)) : pct ? (x => `${fpm(x)} %`) : (x => mlnpm(x));
+  const yFmt = arv ? (d => f0(d)) : pct ? (d => `${f0(d)} %`) : (d => `${f0(d / 1e6)} mln`);
+  return Plot.plot({
+    width, height: 320, marginLeft: 60, style: stiil,
+    caption: `${vMootTekst[vMoot]}. ` + (pct ? `${hFond}: iga vahetus protsendina fondi mahust enne vahetust${andmed.length < rida.length ? " (alla 5 mln € mahuga vahetused välja jäetud)" : ""}.`
+      : `${hFond}: kokku tuli ${fmt(d3.sum(andmed, d => d.tuli))}, lahkus ${fmt(-d3.sum(andmed, d => d.lahkus))}.`),
+    x: {label: null, type: "band", padding: 0.15, tickSize: 0,
+        tickFormat: d => d.getUTCMonth() === 0 && (width >= 600 || d.getUTCFullYear() % 2 === 0) ? String(d.getUTCFullYear()) : ""},
+    y: {label: null, tickFormat: yFmt, grid: true},
+    color: {domain: ["Tuli", "Lahkus", "Neto"], range: [pos, neg, "#2D2A26"], legend: true},
+    marks: [
+      Plot.barY(pikk, {x: "p", y: "y", fill: "liik", fillOpacity: 0.55}),
+      Plot.ruleY([0], {stroke: "#2D2A26"}),
+      Plot.dot(andmed, {x: "p", y: "neto", fill: "#2D2A26", r: 3}),
+      Plot.tip(andmed, Plot.pointerX({x: "p", y: "neto",
+        title: d => `Vahetus ${fkp(d.p)}\ntuli ${fmt(d.tuli)}\nlahkus ${fmt(-d.lahkus)}\nneto ${fmt(d.neto)}`}))
+    ]
+  });
+}
+```
+
+::: {.allikas}
+Tulbad: fondi tulnud (üles) ja lahkunud (alla) raha või vahetajate arv igas vahetuses; must punkt on netotulemus.
+:::
+
+</details>
 
 ## Tootlus ja tasud
 
@@ -1408,33 +1571,60 @@ viewof tPeriood = Inputs.radio(new Map([["1 a", "a1"], ["3 a", "a3"], ["5 a", "a
   const perNimi = {a1: "1 aasta", a3: "3 aasta", a5: "5 aasta", a10: "10 aasta"}[tPeriood];
   const kitsas = width < 600;
   const rMax = d3.max(tabelD, d => d.maht);
+  const xMax = (d3.max(tabelD, d => d.tasu) ?? 1) * 1.08;
   const graafik = (risk) => {
     const valik = tabelD.filter(d => d.risk === risk);
     const andmed = valik.filter(d => d.tasu !== null && d[tPeriood] !== null);
-    const puudu = valik.filter(d => d.tasu === null || d[tPeriood] === null);
+    const puuduTasu = valik.filter(d => d.tasu === null).map(d => d.nimi);
+    const puuduTootlus = valik.filter(d => d.tasu !== null && d[tPeriood] === null).map(d => d.nimi);
     if (!andmed.length) return tyhiGraafik(`Selles rühmas pole ${perNimi} tootlusega fonde (andmed puuduvad).`);
-    return Plot.plot({
-      width, height: kitsas ? 300 : 340, marginLeft: 50, marginRight: kitsas ? 20 : 150, marginTop: 24, marginBottom: 40, style: stiil,
-      caption: puudu.length ? `${puudu.length} fondil pole ${perNimi} tootlust (fond on noorem): ${puudu.map(d => d.nimi).join(", ")}.` : undefined,
-      x: {label: "jooksev tasu aastas →", tickFormat: d => `${f2(d)} %`, grid: true, zero: true, ticks: kitsas ? 4 : 8},
+    const markused = andmed.filter(d => d.markus);
+    const valmis = (sildid) => Plot.plot({
+      width, height: kitsas ? 320 : 340, marginLeft: 50, marginRight: 20, marginTop: 24, marginBottom: 40, style: stiil,
+      caption: [puuduTootlus.length ? `${perNimi} tootlust pole avaldatud (fond on tõenäoliselt noorem): ${puuduTootlus.join(", ")}.` : "",
+        puuduTasu.length ? `Tasu andmed puuduvad: ${puuduTasu.join(", ")}.` : "",
+        // Sama märkusega fondid koos, et allkiri ei korduks
+        ...d3.groups(markused, d => d.markus).map(([m, v]) => `* ${v.map(d => d.nimi).join(", ")}: ${m.replace(/\.?$/, ".")}`)].filter(Boolean).join(" ") || undefined,
+      // Kõigil kolmel graafikul sama tasu-telg, et kulusid saaks võrrelda
+      x: {label: "jooksev tasu aastas →", tickFormat: d => `${f2(d)} %`, grid: true, domain: [0, xMax], ticks: kitsas ? 4 : 8},
       y: {label: tPeriood === "a1" ? "↑ tootlus viimase aasta jooksul" : "↑ keskmine aastane tootlus", tickFormat: d => `${f1(d)} %`, grid: true, nice: true, insetTop: 12, insetBottom: 12},
-      r: {domain: [0, rMax], range: [0, 15]},
+      r: {domain: [0, rMax], range: [3, 15]},
       color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2), legend: true},
       marks: [
         d3.min(andmed, d => d[tPeriood]) < 0 ? Plot.ruleY([0]) : null,
-        Plot.dot(andmed, {x: "tasu", y: tPeriood, r: "maht", fill: "tyyp", fillOpacity: 0.75, stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "#fff", strokeWidth: 1.5}),
-        kitsas ? null : Plot.text(andmed, {x: "tasu", y: tPeriood, text: d => d.markus ? `${d.nimi} *` : d.nimi, textAnchor: "start", dx: 16, fontSize: 10, fill: "#5A554F"}),
+        Plot.dot(andmed, {x: "tasu", y: tPeriood, r: "maht", fill: "tyyp", fillOpacity: 0.8, stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "#fff", strokeWidth: 1.5}),
+        // Parempoolsed sildid punktist vasakule, et need ei läheks üle serva
+        Plot.text(sildid.filter(d => !d.vasak), {x: "tasu", y: "ly", text: "silt", textAnchor: "start", dx: 12, fontSize: kitsas ? 9 : 10, fill: "#2D2A26"}),
+        Plot.text(sildid.filter(d => d.vasak), {x: "tasu", y: "ly", text: "silt", textAnchor: "end", dx: -12, fontSize: kitsas ? 9 : 10, fill: "#2D2A26"}),
         Plot.tip(andmed, Plot.pointer({x: "tasu", y: tPeriood,
           title: d => `${d.nimi}\njooksev tasu ${f2(d.tasu)} % (${f0(d.tasu * 100)} € iga 10 000 € kohta aastas)\ntootlus: 1 a ${d.a1 === null ? "–" : f1(d.a1) + " %"}, 3 a ${d.a3 === null ? "–" : f1(d.a3) + " %"}, 5 a ${d.a5 === null ? "–" : f1(d.a5) + " %"}, 10 a ${d.a10 === null ? "–" : f1(d.a10) + " %"}\nmaht ${mln(d.maht)}${d.markus ? "\n* " + d.markus : ""}`}))
       ]
     });
+    // Siltide hajutamine: esmalt joonistame ilma siltideta, et saada skaalad,
+    // siis lükkame lähedased sildid pikslites lahku ja joonistame uuesti.
+    const proov = valmis([]);
+    const sx = proov.scale("x"), sy = proov.scale("y");
+    const lavi = sx.apply(xMax * 0.55);
+    const paigutatud = [];
+    const sildid = d3.sort(andmed, d => -d[tPeriood]).map(d => {
+      const px = sx.apply(d.tasu), vasak = px > lavi;
+      let py = sy.apply(d[tPeriood]);
+      for (let k = 0; k < 20; k++) {
+        const ees = paigutatud.find(p => p.vasak === vasak && Math.abs(p.px - px) < 150 && Math.abs(p.py - py) < 12);
+        if (!ees) break;
+        py = ees.py + 12;
+      }
+      paigutatud.push({px, py, vasak});
+      return {...d, vasak, ly: sy.invert(py), silt: d.markus ? `${d.nimi} *` : d.nimi};
+    });
+    return valmis(sildid);
   };
   return html`${rühmad.map(([risk, pealkiri, alam]) => html`<h4 class="riskirühm">${pealkiri} <span class="allikas">— ${alam}</span></h4>${graafik(risk)}`)}`;
 }
 ```
 
 ::: {.allikas}
-Igal riskirühmal on oma graafik ja skaala. Ringi suurus näitab fondi mahtu (kõigil graafikutel sama mõõt). Tootlus 3, 5 ja 10 aasta kohta on keskmine aastane (Pensionikeskuse päevastatistika`r if (!is.na(tootlus_kp)) paste0(", seisuga ", fmt_kp(tootlus_kp)) else ""`), 1 aasta tootlus on arvutatud NAV-ist. Jooksevtasu on Pensionikeskuse avaldatud jooksvate tasude määr, mis põhineb fondi eelmise aasta kuludel; see ei ole tänavuse hinnakirja garantii. Riskirühm on ligikaudne ja põhineb fondi praegusel strateegial.
+Igal riskirühmal on oma graafik ja tootluse skaala; tasu-telg ja ringi suurus (fondi maht) on kõigil sama. Näidatud tootlus põhineb osaku puhasväärtusel (NAV), seega fondi varast kaetud kulud on selles juba arvesse võetud. Tootlus 3, 5 ja 10 aasta kohta on keskmine aastane (Pensionikeskuse päevastatistika`r if (!is.na(tootlus_kp)) paste0(", seisuga ", fmt_kp(tootlus_kp)) else ""`), 1 aasta tootlus on arvutatud NAV-ist. Jooksevtasu on Pensionikeskuse avaldatud jooksvate tasude määr, mis põhineb fondi eelmise aasta kuludel; see ei ole tänavuse hinnakirja garantii. Riskirühm on ligikaudne ja põhineb fondi praegusel strateegial.
 :::
 
 ```{ojs}
@@ -1459,7 +1649,7 @@ Inputs.table(d3.sort(tabelD.filter(d => tabRisk === "kõik" || d.risk === tabRis
 ```{ojs}
 {
   const m = tabelD.filter(d => d.markus && (tabRisk === "kõik" || d.risk === tabRisk));
-  return html`<div class="allikas">† keskmine aastane tootlus. Tabelit saab veeru päisel klõpsates sorteerida.${m.length ? html`<br>* Pensionikeskuse märkused: ${m.map(d => html`<br>${d.nimi}: ${d.markus}`)}` : ""}</div>`;
+  return html`<div class="allikas">† keskmine aastane tootlus. Tabelit saab veeru päisel klõpsates sorteerida; kitsal ekraanil saab seda külgsuunas kerida.${m.length ? html`<br>* Pensionikeskuse märkused: ${m.map(d => html`<br>${d.nimi}: ${d.markus}`)}` : ""}</div>`;
 }
 ```
 
@@ -1493,9 +1683,9 @@ viewof vFond = Inputs.select(vintageNimed, {label: "Tõsta esile", width: 320,
   const viimane = esile[esile.length - 1];
   return Plot.plot({
     width, height: kitsas ? 360 : 440, marginLeft: 52, marginRight: kitsas ? 10 : 110, marginBottom: 42, style: stiil,
-    caption: (v === "kasv" ? "Kasv kokku sissemakseaastast tänaseni. " : "Keskmine aastane kasv sissemakseaastast tänaseni; aastaid, mille sissemaksed on olnud fondis keskmiselt alla aasta, ei näidata. ") +
+    caption: `Must joon: ${vFond}. ` + (v === "kasv" ? "Kasv kokku sissemakseaastast tänaseni. " : "Keskmine aastane kasv sissemakseaastast tänaseni (ligikaudne: kogukasv keskmise hoidmisaja peale); aastaid, mille sissemaksed on olnud fondis keskmiselt alla aasta, ei näidata. ") +
       `Fondide andmed kuni ${fkp(kp(andmedKuni))}` + (inflKuni ? `, inflatsioon kuni ${fkuu(kp(inflKuni))}. ` : ". Inflatsiooni andmed ei laadinud. ") +
-      "Punane katkendjoon: inflatsioon. 2017 algab andmetes maist. Õõnes ring: fond alustas selle aasta keskel. Fondi praegune riskirühm; mõne fondi strateegia on ajas muutunud. Arvesse pole võetud fondide ühinemisi ega tasude muutumist.",
+      "Punane katkendjoon: inflatsioon. 2017 algab andmetes maist. Õõnes ring: fond alustas selle aasta keskel. Arvutus kasutab fondi ajaloolist NAV-i, seega tasud on juba sees. Riskirühm on fondi praegune; mõne fondi strateegia on ajas muutunud.",
     x: {label: "sissemakse aasta", type: "point", domain: aastad, padding: 0.4, tickFormat: d => kitsas && d % 2 ? "" : String(d)},
     y: {label: v === "kasv" ? "↑ kasv tänaseks" : "↑ kasv keskmiselt aastas", tickFormat: d => `${f0(d)} %`, grid: true},
     color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2), legend: true},
@@ -1505,9 +1695,10 @@ viewof vFond = Inputs.select(vintageNimed, {label: "Tõsta esile", width: 320,
       infl.length ? Plot.text(infl.filter(d => d.aasta === d3.min(aastad.filter(a => inflK(a)))), {x: "aasta", y: v, text: () => "inflatsioon", fill: "#B23A2E", textAnchor: "start", dy: 12, fontSize: 11}) : null,
       Plot.dot(andmed.filter(d => !d.osaline), {x: "aasta", y: v, r: 4.5, fill: "tyyp", fillOpacity: 0.75}),
       Plot.dot(andmed.filter(d => d.osaline), {x: "aasta", y: v, r: 4.5, stroke: "tyyp", fill: "white", strokeWidth: 1.5}),
-      Plot.line(esile, {x: "aasta", y: v, stroke: "#00AEEA", strokeWidth: 2}),
-      Plot.dot(esile, {x: "aasta", y: v, r: 6, fill: "#00AEEA", stroke: "white", strokeWidth: 1.5}),
-      viimane && !kitsas ? Plot.text([viimane], {x: "aasta", y: v, text: d => d.nimi.replace(/ ?pensionifond/i, ""), fill: "#0086B3", textAnchor: "start", dx: 10, fontSize: 11, fontWeight: 600}) : null,
+      Plot.line(esile, {x: "aasta", y: v, stroke: "#2D2A26", strokeWidth: 2}),
+      Plot.dot(esile.filter(d => !d.osaline), {x: "aasta", y: v, r: 5.5, fill: "#2D2A26", stroke: "white", strokeWidth: 1.5}),
+      Plot.dot(esile.filter(d => d.osaline), {x: "aasta", y: v, r: 5.5, fill: "white", stroke: "#2D2A26", strokeWidth: 2}),
+      viimane && !kitsas ? Plot.text([viimane], {x: "aasta", y: v, text: d => d.nimi.replace(/ ?pensionifond/i, ""), fill: "#2D2A26", textAnchor: "start", dx: 10, fontSize: 11, fontWeight: 600}) : null,
       Plot.tip(andmed, Plot.pointer({x: "aasta", y: v,
         title: d => `${d.nimi}\n${d.aasta}. aasta sissemaksed: ${fmt(d.kasv)} tänaseks` +
           (d.aastas !== null ? `, ${fmt(d.aastas)} aastas` : "") +
@@ -1518,134 +1709,13 @@ viewof vFond = Inputs.select(vintageNimed, {label: "Tõsta esile", width: 320,
 }
 ```
 
-## Fondivahetused
-
-Juba kogutud raha (osakuid) saab teise fondi vahetada kolm korda aastas. Avaldused esitatakse perioodil, mis lõpeb 31. märtsil, 31. juulil või 30. novembril, ja vahetus toimub vastavalt mai, septembri või jaanuari alguses. Kuna kõik vahetused toimuvad samal päeval, on näha täpselt, kuhu raha liikus. Tulevaste sissemaksete suunamine teise fondi jõustub kohe ja seda siin ei näe.
-
-```{ojs}
-perioodid = Array.from(new Set(vahetusedD.map(d => d.vahetus))).sort().reverse()
-viewof vPeriood = perioodid.length ? Inputs.select(perioodid, {value: perioodid[0], label: "Vahetus", width: 420, format: p => {
-  const r = vahetusedD.find(d => d.vahetus === p);
-  return `${fkp(kp(p))} (avaldused ${fkp(kp(r.avaldus_algus))}–${fkp(kp(r.avaldus_lopp))})`;
-}}) : Inputs.input(null)
-viewof vMoot = Inputs.radio(new Map([["Raha", "eur"], ["% fondi mahust", "pct"], ["Lahkumiste arv", "arv"]]), {value: "eur", label: "Näita"})
-```
-
-```{ojs}
-{
-  if (!vPeriood) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
-  const per = vahetusedD.filter(d => d.vahetus === vPeriood)
-    .map(d => ({...d, neto_pct: d.maht_enne >= pctMinAlus ? 100 * d.neto_eur / d.maht_enne : null}));
-  const v = {eur: "neto_eur", pct: "neto_pct", arv: "neto"}[vMoot];
-  const arv = d3.sum(per, d => d.lahkus), raha = d3.sum(per, d => d.lahkus_eur);
-  // Protsendivaates jäävad välja investeerimiskontod (nende mahtu ei avaldata)
-  const andmed = per.filter(d => d.tuli + d.lahkus > 0 && d[v] !== null);
-  return ribagraafik({
-    andmed, v,
-    silt: d => vMoot === "eur" ? mlnpm(d[v]) : vMoot === "pct" ? `${fpm(d[v])} %` : (d[v] > 0 ? "+" : "") + f0(d[v]),
-    caption: `Fondide vahel liikus ${mln(raha)}; fondidest lahkuti ${f0(arv)} korral.` +
-      (vMoot === "pct" ? " Protsent fondi mahust vahetusele eelnenud päeval; investeerimiskontod pole sees." : ""),
-    xFmt: vMoot === "eur" ? (d => `${f0(d / 1e6)} mln`) : vMoot === "pct" ? (d => `${f1(d)} %`) : (d => f0(d)),
-    color: {...tyypVarv, legend: true},
-    stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "none",
-    title: d => `${d.nimi}\ntuli ${f0(d.tuli)} korral (${mln(d.tuli_eur)})\nlahkuti ${f0(d.lahkus)} korral (${mln(d.lahkus_eur)})\nneto ${(d.neto > 0 ? "+" : "") + f0(d.neto)}, ${mlnpm(d.neto_eur)}${d.neto_pct !== null && d.neto_pct !== undefined ? ` (${fpm(d.neto_pct)} % fondi mahust)` : ""}`
-  });
-}
-```
-
-::: {.allikas}
-Lahkumiste arv on fondide kaupa kokku liidetud: kui inimene jagas osakud mitme fondi vahel või vahetas mitmest fondist, on ta loetud mitu korda. See ei ole unikaalsete inimeste arv.
-:::
-
-### Vahetuste ajalugu
-
-Iga vahetuse netotulemus eraldi paneelil, ühise skaalaga. Mõõdik (raha, % mahust või lahkumiste arv) on sama mis ülemisel graafikul.
-
-```{ojs}
-viewof hGrupp = Inputs.radio(new Map([["Fondivalitseja", "valitseja"], ["Fondi tüüp", "tyyp"]]), {value: "valitseja", label: "Paneelid"})
-```
-
-```{ojs}
-{
-  if (!vahetusedD.length) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
-  const pct = vMoot === "pct";
-  const v = vMoot === "arv" ? "neto" : "neto_eur";
-  // Protsendivaates: grupi netotulemus tema mahust enne vahetust (ilma inv.kontodeta)
-  const andmed = d3.flatRollup(vahetusedD.filter(d => !pct || d.maht_enne >= pctMinAlus),
-      g => pct ? 100 * d3.sum(g, d => d.neto_eur) / d3.sum(g, d => d.maht_enne) : d3.sum(g, d => d[v]),
-      d => d.vahetus, d => d[hGrupp])
-    .map(([p, g, neto]) => ({p: kp(p), g, neto}));
-  // Paneelide järjekord: suurim kogu-netovõitja üleval
-  const jarjekord = d3.groupSort(andmed, g => -d3.sum(g, d => d.neto), d => d.g);
-  const yFmt = vMoot === "eur" ? (d => `${f0(d / 1e6)} mln`) : pct ? (d => `${f0(d)} %`) : (d => f0(d));
-  const kitsas = width < 600;
-  return Plot.plot({
-    width, height: jarjekord.length * (kitsas ? 92 : 80) + 50, marginLeft: kitsas ? 52 : 64, marginRight: kitsas ? 8 : 130, style: stiil,
-    caption: puuduvadPerioodid.length ? `NB! Puuduvad vahetused: ${puuduvadPerioodid.map(p => fkp(kp(p))).join(", ")} (andmed ei laadinud).` : undefined,
-    fy: {label: null, domain: jarjekord, axis: kitsas ? null : "right", padding: 0.18},
-    x: {label: null, type: "band", padding: 0.12, tickSize: 0,
-        tickFormat: d => d.getUTCMonth() === 0 && (width >= 600 || d.getUTCFullYear() % 2 === 0) ? String(d.getUTCFullYear()) : ""},
-    y: {label: null, tickFormat: yFmt, grid: true, ticks: 3},
-    marks: [
-      Plot.frame({stroke: "#E8E4DF"}),
-      kitsas ? Plot.text(jarjekord, {fy: d => d, text: d => d, frameAnchor: "top-left", dx: 4, dy: 4, fontSize: 11, fontWeight: 600}) : null,
-      Plot.barY(andmed, {fy: "g", x: "p", y: "neto", fill: d => d.neto >= 0 ? pos : neg, fillOpacity: 0.85}),
-      Plot.ruleY([0], {stroke: "#2D2A26"}),
-      Plot.tip(andmed, Plot.pointer({fy: "g", x: "p", y: "neto",
-        title: d => `${d.g} – vahetus ${fkp(d.p)}\nneto ${vMoot === "eur" ? mlnpm(d.neto) : pct ? fpm(d.neto) + " % mahust" : (d.neto > 0 ? "+" : "") + f0(d.neto)}`}))
-    ]
-  });
-}
-```
-
-#### Ühe fondi vahetused
-
-```{ojs}
-fondiNimed = Array.from(new Set(vahetusedD.filter(d => d.tyyp !== "Investeerimiskonto").map(d => d.nimi))).sort((a, b) => a.localeCompare(b, "et"))
-viewof hFond = fondiNimed.length ? Inputs.select(fondiNimed, {value: fondiNimed.find(n => n.startsWith("Tuleva Maailma A")) ?? fondiNimed[0], label: "Fond", width: 320}) : Inputs.input(null)
-```
-
-```{ojs}
-{
-  if (!hFond) return tyhiGraafik("Fondivahetuste andmed ei laadinud.");
-  const pct = vMoot === "pct", arv = vMoot === "arv";
-  const rida = vahetusedD.filter(d => d.nimi === hFond).sort((a, b) => a.vahetus.localeCompare(b.vahetus));
-  const val = (d, x) => arv ? d[x] : pct ? (d.maht_enne >= pctMinAlus ? 100 * d[x + "_eur"] / d.maht_enne : null) : d[x + "_eur"];
-  const andmed = rida.map(d => ({p: kp(d.vahetus), tuli: val(d, "tuli"), lahkus: val(d, "lahkus"),
-    neto: arv ? d.neto : pct ? (d.maht_enne >= pctMinAlus ? 100 * d.neto_eur / d.maht_enne : null) : d.neto_eur}))
-    .filter(d => d.neto !== null);
-  const pikk = andmed.flatMap(d => [{p: d.p, liik: "Tuli", y: d.tuli}, {p: d.p, liik: "Lahkus", y: -d.lahkus}]);
-  const fmt = arv ? (x => (x > 0 ? "+" : "") + f0(x)) : pct ? (x => `${fpm(x)} %`) : (x => mlnpm(x));
-  const yFmt = arv ? (d => f0(d)) : pct ? (d => `${f0(d)} %`) : (d => `${f0(d / 1e6)} mln`);
-  return Plot.plot({
-    width, height: 320, marginLeft: 60, style: stiil,
-    caption: pct ? `${hFond}: iga vahetus protsendina fondi mahust enne vahetust${andmed.length < rida.length ? " (alla 5 mln € mahuga vahetused välja jäetud)" : ""}.`
-      : `${hFond}: kokku tuli ${fmt(d3.sum(andmed, d => d.tuli))}, lahkus ${fmt(-d3.sum(andmed, d => d.lahkus))}.`,
-    x: {label: null, type: "band", padding: 0.15, tickSize: 0,
-        tickFormat: d => d.getUTCMonth() === 0 && (width >= 600 || d.getUTCFullYear() % 2 === 0) ? String(d.getUTCFullYear()) : ""},
-    y: {label: null, tickFormat: yFmt, grid: true},
-    color: {domain: ["Tuli", "Lahkus"], range: [pos, neg], legend: true},
-    marks: [
-      Plot.barY(pikk, {x: "p", y: "y", fill: "liik", fillOpacity: 0.55}),
-      Plot.ruleY([0], {stroke: "#2D2A26"}),
-      Plot.dot(andmed, {x: "p", y: "neto", fill: "#2D2A26", r: 3}),
-      Plot.tip(andmed, Plot.pointerX({x: "p", y: "neto",
-        title: d => `Vahetus ${fkp(d.p)}\ntuli ${fmt(d.tuli)}\nlahkus ${fmt(-d.lahkus)}\nneto ${fmt(d.neto)}`}))
-    ]
-  });
-}
-```
-
-::: {.allikas}
-Tulbad: fondi tulnud (üles) ja lahkunud (alla) raha või lahkumiste arv igas vahetuses; punkt on netotulemus. Vaikimisi Tuleva Maailma Aktsiad, valikus kõik fondid.
-:::
-
 ## Andmed ja metoodika
 
 - **Allikas:** [Pensionikeskus](https://www.pensionikeskus.ee/statistika/ii-sammas/): fondide maht (ka kõigi fondide koguturg), aktiivsed investorid, NAV, päevastatistika (tasud ja tootlused) ning fondivahetuste statistika. Andmed alates `r fmt_kp(min(kuupaevad))`.
-- **Kogujad** on Pensionikeskuse avaldatud aktiivsete investorite arv fondide kaupa kokku liidetuna. Kui inimesel on osakuid mitmes fondis, võib ta summas korduda.
+- **Kogujad** graafikutel on Pensionikeskuse avaldatud aktiivsete investorite arv fondide kaupa kokku liidetuna. Kui inimesel on osakuid mitmes fondis, on ta summas mitu korda. Kokkuvõttes toodud kogujate arv (inimesed) on Pensionikeskuse avatud pensionikontode statistika viimane seis; selle kohta ajalugu ei avaldata.
 - **Netorahavoog** on arvutatud päevade kaupa: mahu muutusest on lahutatud fondi tootluse (NAV-i muutuse) mõju. See sisaldab sissemakseid, väljamakseid, pärandeid ja vahetusi. Päeval, mil fondi maht või NAV on avaldamata, voogu ei arvutata; see läheb järgmise päeva sisse.
-- **Ühinemised ja suletud fondid:** Pensionikeskuse fondide kaupa eksport ei sisalda suletud fonde, aga koguturg sisaldab. Koguturu ja praeguste fondide vahe on suletud fondide maht. Ühinemised tuvastatakse automaatselt: päeval, mil see vahe järsult kahaneb (või arhiveeritud fond lõpetab) ja mõne fondi maht samal päeval sama palju kasvab. Üle tulnud raha ei ole rahavoog. Suletud fondide maht enne ühinemist on arvestatud vastuvõtva fondi valitseja ja tüübi alla. Kui fond edaspidi ekspordist kaob, salvestatakse tema ajalugu arhiivi ja ta jääb analüüsi alles. `r if (nrow(yhinemised) > 0) paste0("Tuvastatud ühinemised: ", paste(yhinemised %>% group_by(Kuupäev) %>% summarise(t = paste0(fmt_kp(first(Kuupäev)), " (", fmt_milj(sum(ylekanne)), ")"), .groups = "drop") %>% pull(t), collapse = "; "), ".") else ""`
+- **Ühinemised ja suletud fondid:** Pensionikeskuse fondide kaupa eksport ei sisalda suletud fonde, aga koguturg sisaldab. Koguturu ja praeguste fondide vahe on suletud fondide maht. Ühinemised tuvastatakse automaatselt: päeval, mil see vahe järsult kahaneb (või arhiveeritud fond lõpetab) ja mõne fondi maht samal päeval sama palju kasvab. Üle tulnud raha ei ole rahavoog. Suletud fondide maht enne ühinemist on arvestatud vastuvõtva fondi valitseja ja tüübi alla. Nende tootlus on hinnatud turu keskmisega ja kogujate arv ühinemispäeva järgi, seega suletud fondide varasem rahavoog ja kogujad on ligikaudsed. Kui fond edaspidi ekspordist kaob, salvestatakse tema ajalugu arhiivi ja ta jääb analüüsi alles. `r if (nrow(yhinemised) > 0) paste0("Tuvastatud ühinemised: ", paste(yhinemised %>% group_by(Kuupäev) %>% summarise(t = paste0(fmt_kp(first(Kuupäev)), " (", fmt_milj(sum(ylekanne)), ")"), .groups = "drop") %>% pull(t), collapse = "; "), ".") else ""`
+- **Protsendid:** rahavoo protsent on arvutatud grupi või fondi mahust perioodi (kuu, vahetuse) alguses. Alla 5 mln € mahuga alust ei kasutata, sest siis domineerib väike nimetaja.
 - **Indeksfondid** on Tuleva fondid, LHV Indeks, SEB Indeks, Swedbank Indeks, Swedbank 1990–99 ja Luminor Indeks.
 - Andmefailid: [koguturg_koguinfo.csv](https://seppo.ai/tuleva/koguturg_koguinfo.csv), [koguturg_indeksfondid_osakaal.csv](https://seppo.ai/tuleva/koguturg_indeksfondid_osakaal.csv). Lehe kood: [GitHub](https://github.com/iseppo/periodical/blob/main/turuylevaade.qmd).
 - III samba ülevaade: [III_sammas.html](https://seppo.ai/tuleva/III_sammas.html).

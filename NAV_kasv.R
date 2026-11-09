@@ -932,6 +932,7 @@ create_specific_animation <- function(animeeritud_andmed_raw,
   # Failinimed
   mp4_input  <- paste0("aastane_tulu_animeeritud2", file_suffix, ".mp4")
   mp4_output <- paste0("aastane_tulu_animeeritud",  file_suffix, ".mp4")
+  mp4_tmp    <- paste0("aastane_tulu_animeeritud",  file_suffix, ".tmp.mp4")
   
   message("Salvestan MP4: ", mp4_input)
   anim_save(
@@ -959,15 +960,22 @@ create_specific_animation <- function(animeeritud_andmed_raw,
     "-preset fast", # Kiirem kodeerimine
     "-crf 23",      # Hea kvaliteet/kiiruse suhe
     "-c:a copy",
-    shQuote(mp4_output)
+    shQuote(mp4_tmp)
   ))
 
-  if (exit_code != 0) {
-    stop("ffmpeg ebaõnnestus (kood: ", exit_code, "). Vahefail säilitatud: ", mp4_input, call. = FALSE)
-  } else {
-    # Kustutame vahefaili ainult eduka kodeerimise korral
-    file.remove(mp4_input)
+  # Lõplik nimi alles pärast edukat ja kontrollitud kodeerimist: katkenud
+  # ffmpeg ei tohi jätta poolikut faili, mille CI avaldaks (R2 kirjutaks
+  # töötava video üle).
+  kestus <- if (exit_code == 0 && file.exists(mp4_tmp)) suppressWarnings(as.numeric(system(paste(
+    "ffprobe -v error -show_entries format=duration -of csv=p=0", shQuote(mp4_tmp)), intern = TRUE)[1])) else NA
+  if (exit_code != 0 || is.na(kestus) || kestus <= anim_pause_sec) {
+    if (file.exists(mp4_tmp)) file.remove(mp4_tmp)
+    stop("ffmpeg ebaõnnestus (kood: ", exit_code, ", kestus: ", kestus, "). Vahefail säilitatud: ",
+         mp4_input, call. = FALSE)
   }
+  file.rename(mp4_tmp, mp4_output)
+  # Kustutame vahefaili ainult eduka kodeerimise korral
+  file.remove(mp4_input)
 } 
 
 #' Genereerib kõik animatsioonid

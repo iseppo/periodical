@@ -279,6 +279,15 @@ server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`
   `tuleva/index.html`. There is no directory listing any more (`listing.js` was removed).
 - **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html`;
   raise the threshold when adding charts. Below it, the market overview group is published from last-good.
+  Both widths must be checked successfully (Chrome failure = fallback). Charts with missing data render an
+  empty Plot with a message (`tyhiGraafik`), so a data outage does not drop the chart count.
+- **No partial deploys:** if a report group is missing and has no last-good copy, `stage.mjs` exits 1 and
+  nothing is deployed (`wrangler deploy` replaces the whole site, so a partial set would delete live files).
+- **Closed-fund archive:** the committed `data/ii_suletud_fondid.csv` wins over the cached copy per fund
+  (step "Merge closed-fund archive"); the archive is committed from a separate worktree so the published
+  files stay on the rendered commit.
+- **Render stops on bad data** (CI then publishes last-good): export older than 10 days, more than 3 funds
+  missing at once, or a fund missing from the export while the official total still contains it.
 - **Config:** `cloudflare/wrangler.jsonc`. Assets use `html_handling: "none"` so `.html` URLs stay
   canonical. The Worker only runs for `dir/` index pages and R2 video.
 - **Deploy failures:** check the `CLOUDFLARE_API_TOKEN` secret, which maps to Cloudflare account token
