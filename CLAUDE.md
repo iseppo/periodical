@@ -236,11 +236,20 @@ See `PERFORMANCE_OPTIMIZATIONS.md` for detailed optimization history.
 
 ## Common Issues and Solutions
 
-### "Puuduvad fondid" Warning
+### New, closed and merged II pillar funds (turuylevaade.qmd)
 
-New funds may be added to Pensionikeskus. Check:
-1. `fund_info` scraping in `turuylevaade.qmd`
-2. Update `Pensionifondid.csv` if needed
+Handled automatically, no code change needed:
+- **Fund list** comes from the fund selector on Pensionikeskus' volume page
+  (`Pensionifondid.csv` is only a fallback). Manager, index/active type and risk group of an
+  unknown fund are derived from its name (`lisa_meta`, `riskirühm`); add a row to `fondi_meta`
+  / `riskirühm` only to override.
+- **Closed/merged funds** disappear from the per-fund export with their whole history. The
+  official market total (`f[0]=-1`) still includes them: the residual is treated as closed-fund
+  volume, and mergers are detected automatically (residual drop or archived fund ending + a
+  matching abnormal inflow in receiver funds). Merger transfers go to `yhinemine`, not net flow.
+- **Archive:** when a fund vanishes between runs, its history (from the previous run's
+  `cache_ii_fondid.rds`, kept by actions/cache) is written to `data/ii_suletud_fondid.csv`,
+  which the workflow commits. Detected mergers are logged in the render output (`Ühinemine …`).
 
 ### Animation Encoding Failures
 
@@ -258,8 +267,12 @@ rm cache_nav_data.rds cache_inflation_data.rds
 seppo.ai moved from Zone.ee to Cloudflare Workers on 2026-11-08. Never SCP/SSH to the old Zone
 server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`SKIP_UPLOAD=1`).
 
-- **To add a published file:** add it to `FILES` in `cloudflare/stage.mjs`. Video (mp4/webm/mov)
-  goes to R2 automatically.
+- **To add a published file:** add it to a group in `GROUPS` in `cloudflare/stage.mjs`. Video
+  (mp4/webm/mov) goes to R2 automatically. If any file of a group is missing (failed render, or the
+  headless-Chrome check in `main.yml` rejected `turuylevaade.html`), the whole group is published
+  from the last successful deploy (`cloudflare/last-good/`, actions/cache).
+- **OJS libraries** (d3, Plot, Inputs, htl) are vendored in `ojs-lib/` (same versions as the
+  Quarto OJS runtime) so the charts do not depend on jsdelivr.
 - **Search indexing:** `kihlveod/` is indexable (`kihlveod/tuleva.html` is in seppo.ai's sitemap).
   `tuleva/` is `noindex`, set via `_headers` written by `stage.mjs` and in `cloudflare/worker.js`.
 - **Config:** `cloudflare/wrangler.jsonc`. Assets use `html_handling: "none"` so `.html` URLs stay

@@ -1,1220 +1,1307 @@
 ---
-title: "Turuülevaade"
+title: "Teise samba turuülevaade"
+pagetitle: "Teise samba turuülevaade – kuhu liigub Eesti pensionifondide raha (uueneb iga päev)"
+description: "Eesti II samba pensionifondide maht, kogujad, rahavood, fondivahetused, tootlus ja tasud. Uueneb iga päev Pensionikeskuse andmetel."
 date: today
-date-format: long
-lang: et_EE
+lang: et
+author: "Indrek Seppo"
+language:
+  title-block-author-single: "Autor"
+  title-block-published: "Uuendatud"
 format:
   html:
+    theme: lumen
     toc: true
-    toc-depth: 3 # default is 3
-    toc-title: Sisukord
-    toc-location: right # default is right, option is 'body'
-    number-sections: false
-    number-depth: 3
-    html-math-method: katex
-    self-contained: true
+    toc-title: "Sisukord"
+    toc-location: left
+    toc-depth: 2
+    embed-resources: false
     anchor-sections: true
     smooth-scroll: true
-    theme: slate
-execute: 
+    include-in-header: analytics.html
+    include-after-body: footer.html
+    css: [tuleva-style.css, turuylevaade-style.css]
+execute:
   echo: false
   warning: false
   message: false
 ---
 
+```{r setup}
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(tidyr)
+  library(readr)
+  library(stringr)
+  library(lubridate)
+  library(rvest)
+  library(jsonlite)
+  library(purrr)
+  library(furrr)
+  library(future)
+})
 
+# NB: OutDec'i siin EI sea. Arvud vormindame eesti kujul (koma, tühik) ainult
+# teksti jaoks fmt_*-funktsioonidega. Globaalne OutDec = "," rikkus varem
+# andmetöötluse (format() -> as.numeric andis NA).
 
-```{r message=FALSE}
-library(dplyr)
-library(tidyr)
-library(forcats)
-library(ggplot2)
-library(readr)
-library(stringr)
-library(lubridate)
-library(hrbrthemes)
-library(plotly)
-library(jsonlite)
-library(rvest)
-library(furrr)
-library(future)
-library(parallel)
-library(tibble)
+alates <- as.Date("2017-05-02")
+kuni   <- today() - days(1)
 
-# Eesti kümnenderaldaja (CI lülitab .Rprofile välja, seega seame siin)
-options(OutDec = ",")
-```
+fmt_arv <- function(x, d = 0) {
+  formatC(x, format = "f", digits = d, big.mark = " ", decimal.mark = ",")
+}
+fmt_milj <- function(x, d = 0) paste0(fmt_arv(x / 1e6, d), " mln €")
+fmt_mld  <- function(x, d = 2) paste0(fmt_arv(x / 1e9, d), " mld €")
+fmt_pct  <- function(x, d = 1) paste0(fmt_arv(x, d), " %")
+fmt_kp   <- function(x) {
+  kuud <- c("jaanuar", "veebruar", "märts", "aprill", "mai", "juuni", "juuli",
+            "august", "september", "oktoober", "november", "detsember")
+  paste0(day(x), ". ", kuud[month(x)], " ", year(x))
+}
+# Märgiga muutus HTML-ina (roheline/punane)
+fmt_delta <- function(x, tekst) {
+  klass <- if (is.na(x)) "" else if (x >= 0) "pos" else "neg"
+  mark  <- if (!is.na(x) && x > 0) "+" else ""
+  paste0('<span class="', klass, '">', mark, tekst, "</span>")
+}
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-from_day <- "2017-05-02"
-yesterday <- as.character(today() - days(1))
-#yesterday <- "2023-07-18"
-```
-
-
-```{r fondid_online}
-
-url <- "https://www.pensionikeskus.ee/ii-sammas/kohustuslikud-pensionifondid/"
-
-# Kui veebileht ei laadi, ei katkesta me renderdamist — kasutame allpool
-# Pensionifondid.csv failis olevaid fondinimesid varuvariandina.
-fondid_html <- tryCatch(
-  read_html(url),
-  error = function(e) {
-    message("Pensionikeskus HTML ei laadnud: ", conditionMessage(e))
-    NULL
+# Pensionikeskuse eksport (UTF-16 TSV). 3 katset, sest Pensionikeskuse ja
+# GitHubi runneri vahel on aeg-ajalt lühiajalisi katkestusi.
+loe_pk <- function(url, kirjeldus) {
+  vana <- getOption("timeout"); options(timeout = 60)
+  on.exit(options(timeout = vana), add = TRUE)
+  for (katse in 1:3) {
+    res <- tryCatch(
+      read.delim(url, fileEncoding = "UTF-16", colClasses = "character",
+                 check.names = FALSE),
+      error = function(e) {
+        message(kirjeldus, " katse ", katse, " ebaõnnestus: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(res) && nrow(res) > 0) return(res)
+    if (katse < 3) Sys.sleep(10)
   }
+  stop(kirjeldus, " ei laadinud kolme katsega")
+}
+
+teksti_arvuks <- function(x) {
+  x <- gsub("[[:space:] +]", "", x)
+  x <- gsub("–|−", "-", x)        # Pensionikeskuse "–" = puudub / miinus
+  x[x %in% c("-", "")] <- NA
+  suppressWarnings(as.numeric(gsub(",", ".", x)))
+}
+```
+
+```{r fondid}
+# Fondide nimekiri tuleb automaatselt Pensionikeskusest: mahtude lehe
+# fondivalik sisaldab kõiki praegu tegutsevaid II samba fonde (ID + nimi).
+# Varuks kohustuslike fondide leht ja viimases hädas Pensionifondid.csv.
+# Uus fond tuleb nii ise sisse; valitseja, tüüp ja riskirühm tuletatakse
+# nimest (vt lisa_meta), kui fondi_meta seda veel ei tea.
+loe_fondide_nimekiri <- function() {
+  for (katse in 1:3) {
+    ids <- tryCatch({
+      read_html("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-maht/") %>%
+        html_elements("input[name='f[]']") %>% html_attr("value") %>%
+        setdiff("-1") %>% str_subset("^\\d+$") %>% unique()
+    }, error = function(e) { message("Fondivalik, katse ", katse, ": ", conditionMessage(e)); character() })
+    if (length(ids) >= 5) return(ids)
+    ids <- tryCatch({
+      read_html("https://www.pensionikeskus.ee/ii-sammas/kohustuslikud-pensionifondid/") %>%
+        html_elements("a[href*='/fid/']") %>% html_attr("href") %>%
+        str_match("/fid/(\\d+)") %>% .[, 2] %>% na.omit() %>% unique()
+    }, error = function(e) character())
+    if (length(ids) >= 5) return(ids)
+    if (katse < 3) Sys.sleep(10)
+  }
+  message("::warning::Fondide nimekiri veebist ei laadinud — kasutan Pensionifondid.csv")
+  read_csv("Pensionifondid.csv", show_col_types = FALSE)$id %>% as.character()
+}
+fondi_ids <- loe_fondide_nimekiri()
+teadaolevad <- as.character(read_csv("Pensionifondid.csv", show_col_types = FALSE)$id)
+uued_ids <- setdiff(fondi_ids, teadaolevad)
+if (length(uued_ids) > 0) message("::notice::Uued fondid (lisanduvad automaatselt): ",
+                                  paste(uued_ids, collapse = ", "))
+f_param <- paste0("&f%5B", seq_along(fondi_ids) - 1, "%5D=", fondi_ids, collapse = "")
+pk_url <- function(leht, f = f_param) {
+  paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/", leht,
+         "/?download=xls&date_from=", alates, "&date_to=", kuni, f)
+}
+
+# Fondide metaandmed lühinime (koodi) järgi. Suletud fondide koodid (LRK100,
+# LSK00) on vajalikud vahetuste ajaloo jaoks: seal liidetakse need vastuvõtva
+# fondiga (Roheline -> Julge, S -> Tasakaalukas).
+fondi_meta <- tribble(
+  ~kood,    ~nimi,                       ~valitseja, ~tyyp,
+  "TUK75",  "Tuleva Maailma Aktsiad",    "Tuleva",   "Indeks",
+  "TUK00",  "Tuleva Maailma Võlakirjad", "Tuleva",   "Indeks",
+  "LIK75",  "LHV Indeks",                "LHV",      "Indeks",
+  "LXK75",  "LHV Julge",                 "LHV",      "Aktiivne",
+  "LRK100", "LHV Julge",                 "LHV",      "Aktiivne",
+  "LLK50",  "LHV Ettevõtlik",            "LHV",      "Aktiivne",
+  "LMK25",  "LHV Tasakaalukas",          "LHV",      "Aktiivne",
+  "LSK00",  "LHV Tasakaalukas",          "LHV",      "Aktiivne",
+  "LXK00",  "LHV Rahulik",               "LHV",      "Aktiivne",
+  "NIK100", "Luminor Indeks",            "Luminor",  "Indeks",
+  "NPK75",  "Luminor 16–50",             "Luminor",  "Aktiivne",
+  "NPK50",  "Luminor 50–56",             "Luminor",  "Aktiivne",
+  "NPK25",  "Luminor 56+",               "Luminor",  "Aktiivne",
+  "NPK00",  "Luminor 61–65",             "Luminor",  "Aktiivne",
+  "SIK75",  "SEB Indeks",                "SEB",      "Indeks",
+  "SEK100", "SEB 18+",                   "SEB",      "Aktiivne",
+  "SEK50",  "SEB 55+",                   "SEB",      "Aktiivne",
+  "SEK25",  "SEB 60+",                   "SEB",      "Aktiivne",
+  "SEK00",  "SEB 65+",                   "SEB",      "Aktiivne",
+  "SWK100", "Swedbank Indeks",           "Swedbank", "Indeks",
+  "SWK99",  "Swedbank 1990–99 indeks",   "Swedbank", "Indeks",
+  "SWK75",  "Swedbank 1980–89",          "Swedbank", "Aktiivne",
+  "SWK50",  "Swedbank 1970–79",          "Swedbank", "Aktiivne",
+  "SWK25",  "Swedbank 1960–69",          "Swedbank", "Aktiivne",
+  "SWK09",  "Swedbank 2000–09",          "Swedbank", "Aktiivne",
+  "SWK00",  "Swedbank Konservatiivne",   "Swedbank", "Aktiivne"
 )
 
-if (is.null(fondid_html)) {
-  fund_info <- data.frame(ID = character(), Title = character(),
-                          stringsAsFactors = FALSE)
+# Tundmatu koodi (uus või ammu suletud fond) puhul tuletame nimest.
+lisa_meta <- function(df) {
+  df %>%
+    left_join(fondi_meta, by = "kood") %>%
+    mutate(
+      nimi = coalesce(nimi, Fond),
+      valitseja = coalesce(valitseja, case_when(
+        str_detect(Fond, "^Tuleva") ~ "Tuleva",
+        str_detect(Fond, "^LHV") ~ "LHV",
+        str_detect(Fond, "^(Luminor|Nordea)") ~ "Luminor",
+        str_detect(Fond, "^SEB") ~ "SEB",
+        str_detect(Fond, "^Swed") ~ "Swedbank",
+        # Uus fondivalitseja: nime esimene sõna (nt "Admiral ...")
+        !is.na(Fond) & Fond != "" ~ word(str_remove(Fond, "^AS "), 1),
+        TRUE ~ "Muu")),
+      # Tuleva fondid on kõik indeksfondid; teistel otsustab nimi
+      tyyp = coalesce(tyyp, if_else(str_detect(Fond, regex("indeks", ignore_case = TRUE)) |
+                                      str_detect(Fond, "^Tuleva"), "Indeks", "Aktiivne"))
+    )
+}
+```
+
+```{r andmed}
+plan(multisession, workers = 4)
+paringud <- list(
+  maht  = future({ loe_pk(pk_url("kogumispensioni-fondide-maht"), "Fondide maht") }),
+  inv   = future({ loe_pk(pk_url("aktiivsed-investorid"), "Investorid") }),
+  nav   = future({ loe_pk(pk_url("kogumispensioni-fondide-nav"), "NAV") }),
+  # Ametlik koguturg (f = -1) sisaldab ka suletud ja ühendatud fonde, mida
+  # fondide kaupa eksport enam ei näita.
+  kokku = future({ loe_pk(pk_url("kogumispensioni-fondide-maht", "&f%5B0%5D=-1"), "Koguturu maht") })
+)
+maht_raw  <- value(paringud$maht)
+inv_raw   <- value(paringud$inv)
+nav_raw   <- value(paringud$nav)
+kokku_raw <- value(paringud$kokku)
+plan(sequential)
+
+maht <- maht_raw %>%
+  transmute(Kuupäev = dmy(Kuupäev), kood = Lühinimi, Fond, maht = teksti_arvuks(Maht))
+inv <- inv_raw %>%
+  transmute(Kuupäev = dmy(Kuupäev), kood = Lühinimi, inv = teksti_arvuks(`Invest. arv`))
+nav <- nav_raw %>%
+  transmute(Kuupäev = dmy(Kuupäev), kood = Lühinimi, NAV = teksti_arvuks(NAV))
+kokku <- kokku_raw %>%
+  transmute(Kuupäev = dmy(Kuupäev), T = teksti_arvuks(Maht)) %>%
+  filter(!is.na(Kuupäev), !is.na(T)) %>% distinct(Kuupäev, .keep_all = TRUE)
+
+stopifnot(nrow(maht) > 0, !all(is.na(maht$Kuupäev)), !all(is.na(maht$maht)), nrow(kokku) > 0)
+# Kuupäev + fond peab olema unikaalne; muidu on eksport katki ja parem on
+# raport nurjata (avaldamine jätab siis eelmise korrektse versiooni alles).
+for (x in list(list(maht, "maht"), list(inv, "investorid"), list(nav, "NAV"))) {
+  dup <- x[[1]] %>% count(Kuupäev, kood) %>% filter(n > 1)
+  if (nrow(dup) > 0) stop(x[[2]], ": korduvad read, nt ", dup$kood[1], " ", dup$Kuupäev[1])
+}
+
+toores <- maht %>%
+  full_join(inv, by = c("Kuupäev", "kood")) %>%
+  full_join(nav, by = c("Kuupäev", "kood")) %>%
+  filter(!is.na(Kuupäev), !is.na(kood), kood != "")
+
+# --- Suletud fondide arhiiv ----------------------------------------------------
+# Kui fond suletakse või ühendatakse teisega, kaob Pensionikeskuse ekspordist
+# kogu tema ajalugu. Hoiame eelmise jooksu toorandmed alles (CI cache) ja kui
+# mõni fond kaob, kirjutame tema ajaloo arhiivi (data/, commititakse). Nii
+# jääb suletud fond analüüsi alles ka edaspidi.
+ARHIIV   <- "data/ii_suletud_fondid.csv"
+EELMINE  <- "cache_ii_fondid.rds"
+arhiiv <- if (file.exists(ARHIIV)) {
+  read_csv(ARHIIV, col_types = cols(Kuupäev = col_date(), kood = col_character(),
+                                    Fond = col_character(), .default = col_double()))
 } else {
-  # Select all <a> elements with class "fund"
-  fund_links <- fondid_html %>% html_nodes("a.fund")
-
-  # Extract the 'href' attribute to get fund URLs
-  fund_urls <- html_attr(fund_links, "href")
-
-  # Extract the fund IDs from the URLs (ühe sammuga, lõpu kaldkriips valikuline)
-  fund_ids <- sub(".*/fid/(\\d+)/?.*", "\\1", fund_urls)
-  fund_ids[!grepl("/fid/\\d+", fund_urls)] <- NA_character_
-
-  # Extract the 'title' attribute for fund titles
-  fund_titles <- html_attr(fund_links, "title")
-
-  # Combine the IDs and titles into a data frame
-  fund_info <- data.frame(ID = fund_ids, Title = fund_titles,
-                          stringsAsFactors = FALSE) %>%
-    filter(!is.na(ID), nchar(trimws(Title)) > 0)
+  tibble(Kuupäev = as.Date(character()), kood = character(), Fond = character(),
+         maht = numeric(), inv = numeric(), NAV = numeric())
 }
-
-```
-
-
-```{r message=FALSE, warning=FALSE, include=FALSE}
-fondid <- read_csv("Pensionifondid.csv") %>%
-  mutate(id = as.character(id))
-
-if (nrow(fund_info) > 0) {
-  # Värskendame fondinimed Pensionikeskusest (nimed võivad ajas muutuda).
-  fondid <- fondid %>%
-    select(-any_of("fond")) %>%
-    left_join(select(fund_info, Title, ID), by = c("id" = "ID")) %>%
-    rename(fond = Title)
-} else {
-  # Veebipäring ebaõnnestus — jääme Pensionifondid.csv failis olevate nimede juurde.
-  message("Kasutan fondinimesid Pensionifondid.csv failist (veeb ei vastanud).")
-}
-
-puuduvad <- fund_info %>%
-  filter(!ID %in% fondid$id)
-puudu <- nrow(puuduvad) > 0
-```
-
-
-```{r eval = puudu}
-cat("NB! meil on uusi fonde, mida kood ei arvesta", puuduvad$Title)
-```
-
-
-
-```{r loe_failid, warning=FALSE, include=FALSE}
-# Read data in
-
-#fondid_investorid <- read_csv("data/fondid_investorid.csv")
-#fondid_maht <- read_csv("data/fondid_maht.csv")
-#fondid_investorid$Kuupäev <- dmy(fondid_investorid$Kuupäev)
-```
-
-
-```{r lae_alla_info, warning=FALSE, include=FALSE}
-# this if clause doesn't seem to work as the max data is always from previous days I guess
-#if(!(min(fondid_investorid$Kuupäev) == from_day & max(fondid_investorid$Kuupäev) == yesterday))  {
-  # OPTIMEERITUD: kasutame kõiki saadaolevaid tuumi (jättes 1 vabaks)
-  available_cores <- parallel::detectCores()
-  is_ci <- nzchar(Sys.getenv("CI"))
-  worker_count <- if (is_ci) available_cores else max(2, available_cores - 1)
-  plan(multisession, workers = worker_count)
-  on.exit(plan(sequential), add = TRUE)
-  # Iga fondi laadimine on eraldi tryCatch'i sees: kui üks fond ei laadi (või
-  # Pensionikeskus muudab veergude arvu), jätame selle fondi vahele, mitte ei
-  # katkesta tervet raportit. colClasses = "character" loeb kõik veerud tekstina
-  # — see EI ole positsiooniline (talub veergude lisandumist/kadumist) ja hoiab
-  # veerutüübid fondide vahel ühtsena. Muidu annaks read.csv2 tüübituvastus
-  # fonditi erineva tulemuse (tühi veerg -> logical, täisarvud -> integer),
-  # mille peale uuem vctrs::vec_rbind keeldub future_map_dfr'i bind_rows'ist.
-  # Arvtüübid teisendame allpool selgesõnaliselt.
-  fondid_investorid <- furrr::future_map_dfr(fondid$id, function(i) {
-    message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
-    url_investorid <- paste0(
-      "https://www.pensionikeskus.ee/statistika/ii-sammas/aktiivsed-investorid/?download=xls&date_from=",
-      from_day,
-      "&date_to=",
-      yesterday,
-      "&f%5B0%5D=",
-      i
-    )
-    res <- tryCatch(
-      read.csv2(
-        url_investorid,
-        fileEncoding = "UTF-16",
-        header = TRUE,
-        sep = "\t",
-        stringsAsFactors = FALSE,
-        colClasses = "character"
-      ),
-      error = function(e) {
-        message("  fondi ", i, " investorite andmed ei laadinud: ",
-                conditionMessage(e))
-        NULL
-      }
-    )
-    # Andmeteta vastuse jätame vahele, et raportisse ei satuks tühje ridu.
-    if (is.null(res) || nrow(res) == 0) return(NULL)
-    res
-  })
-
-  fondid_maht <- furrr::future_map_dfr(fondid$id, function(i) {
-    message("tõmban andmeid fondist ", fondid$fond[fondid$id == i])
-    url_maht <- paste0(
-      "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-maht/?download=xls&date_from=",
-      from_day,
-      "&date_to=",
-      yesterday,
-      "&f%5B0%5D=",
-      i
-    )
-    res <- tryCatch(
-      read.csv2(
-        url_maht,
-        fileEncoding = "UTF-16",
-        header = TRUE,
-        sep = "\t",
-        stringsAsFactors = FALSE,
-        colClasses = "character"
-      ),
-      error = function(e) {
-        message("  fondi ", i, " mahu andmed ei laadinud: ",
-                conditionMessage(e))
-        NULL
-      }
-    )
-    # Andmeteta vastuse jätame vahele (vt selgitust investorite ploki juures).
-    if (is.null(res) || nrow(res) == 0) return(NULL)
-    res
-  })
-#  write_csv(fondid_investorid, "data/fondid_investorid.csv")
-#  write_csv(fondid_maht, "data/fondid_maht.csv")
-
-#}
-```
-
-
-```{r message=FALSE, warning=FALSE, include=FALSE}
-if(is.character(fondid_investorid$Kuupäev)) fondid_investorid$Kuupäev <- dmy(fondid_investorid$Kuupäev)
-if(is.character(fondid_maht$Kuupäev)) fondid_maht$Kuupäev <- dmy(fondid_maht$Kuupäev)
-
-# colClasses = "character" tõttu on kõik veerud tekstina — teisendame
-# kasutatavad arvtüübid siin. teksti_arvuks talub koma-kümnendkohta ja
-# tühikut tuhandeliste eraldajana (Eesti arvuvorming).
-teksti_arvuks <- function(x) {
-  as.numeric(gsub(",", ".", gsub("[[:space:]]", "", x)))
-}
-
-fondid_investorid <- fondid_investorid %>%
-  rename("investeerijate arv" = Invest..arv, inv_arv_muutus = Muutus..) %>%
-  mutate(`investeerijate arv` = as.integer(teksti_arvuks(`investeerijate arv`)))
-
-fondid_maht <- fondid_maht %>%
-  rename("maht" = Maht, mahu_muutus = Muutus..) %>%
-  mutate(maht = teksti_arvuks(maht))
-
-fondid_info <- full_join(fondid_maht, fondid_investorid, by = c("Kuupäev", "Lühinimi")) %>%
-  select(-any_of("Fond.PIK")) %>%
-  mutate(Lühinimi = case_when(
-    # Tuleva indeksfondid
-    Lühinimi == "TUK75" ~ "Tuleva Akt",
-    Lühinimi == "TUK00" ~ "Tuleva Võl",
-    # LHV fondid (uued nimed alates 2.09.2025)
-    Lühinimi == "LIK75" ~ "LHV Indeks",
-    Lühinimi == "LXK75" ~ "LHV Julge",      # varem XL, ühines Rohelisega
-    Lühinimi == "LRK100" ~ "LHV Julge",     # Roheline ühines XL-ga -> Julge
-    Lühinimi == "LLK50" ~ "LHV Ettev",      # varem L
-    Lühinimi == "LMK25" ~ "LHV Tasak",      # varem M, ühines S-ga
-    Lühinimi == "LSK00" ~ "LHV Tasak",      # S ühines M-ga -> Tasakaalukas
-    Lühinimi == "LXK00" ~ "LHV Rahul",      # varem XS
-    # Luminor fondid
-    Lühinimi == "NIK100" ~ "Lum Indeks",
-    Lühinimi == "NPK75" ~ "Lum 16-50",
-    Lühinimi == "NPK50" ~ "Lum 50-56",
-    Lühinimi == "NPK25" ~ "Lum 56+",
-    Lühinimi == "NPK00" ~ "Lum 61-65",
-    # SEB fondid
-    Lühinimi == "SIK75" ~ "SEB Indeks",
-    Lühinimi == "SEK100" ~ "SEB 18+",
-    Lühinimi == "SEK50" ~ "SEB 55+",
-    Lühinimi == "SEK25" ~ "SEB 60+",
-    Lühinimi == "SEK00" ~ "SEB 65+",
-    # Swedbank fondid
-    Lühinimi == "SWK100" ~ "SW Indeks",
-    Lühinimi == "SWK99" ~ "SW 1990s",       # indeks 1990-99 sündinutele
-    Lühinimi == "SWK25" ~ "SW 1960s",
-    Lühinimi == "SWK50" ~ "SW 1970s",
-    Lühinimi == "SWK75" ~ "SW 1980s",
-    Lühinimi == "SWK09" ~ "SW 2000s",
-    Lühinimi == "SWK00" ~ "SW Konsv",
-    TRUE ~ Lühinimi  # Jätab teised lühinimed samaks
-  ))
-```
-
-
-```{r message=FALSE, warning=FALSE, include=FALSE}
-
-indeksfondid <- fondid_info %>%
-  filter(Fond %in% fondid$fond[fondid$indeks == "x"])
-
-```
-
-
-```{r}
-# define colors
-indeksfondid_arv <- length(unique(indeksfondid$Lühinimi))
-#colors <- c("#fd7f6f", "#b2e061", "#bd7ebe", "#ffb55a", "#ffee65", "#beb9db", "#fdcce5", "#8bd3c7")
-colors <- c("#e60049", "#50e991", "#e6d800", "#9b19f5", "#ffa300", "#dc0ab4", "#b3d4ff", "#00bfa0")
-colors_fondid <- colors[1:indeksfondid_arv]
-
-names(colors_fondid) <- unique(indeksfondid$Lühinimi)
-colors_fondid[["Tuleva Akt"]] <- "#00aeea"
-```
-
-
-```{r}
-andmed_alates <- min(fondid_info$Kuupäev)
-andmed_kuni <- max(fondid_info$Kuupäev)
-```
-
-Andmed: `r andmed_alates` -- `r andmed_kuni`.
-
-# Koguturu ülevaade
-
-
-
-::: panel-tabset
-
-
-```{r include=FALSE}
-indeksfondid_koos <- indeksfondid %>%
-  group_by(Kuupäev) %>%
-  summarize(maht = sum(maht, na.rm = TRUE), investoreid = sum(`investeerijate arv`, na.rm = TRUE)) 
-
-k6ik_koos <- fondid_info %>%
-  group_by(Kuupäev) %>%
-  summarize(maht_kokku = sum(maht, na.rm = TRUE), investoreid_kokku = sum(`investeerijate arv`, na.rm = TRUE)) 
-
-
-tuleva <- fondid_info %>%
-  filter(Lühinimi == "Tuleva Akt") %>%
-  group_by(Kuupäev) %>%
-  summarize(maht_tuleva = sum(maht, na.rm = TRUE), investoreid_tuleva = sum(`investeerijate arv`, na.rm = TRUE)) 
-
-
-tuleva_koos_volakiri <- fondid_info %>%
-  filter(Lühinimi == "Tuleva Akt" | Lühinimi == "Tuleva Võl") %>%
-  group_by(Kuupäev) %>%
-  summarize(maht_tuleva = sum(maht, na.rm = TRUE), investoreid_tuleva = sum(`investeerijate arv`, na.rm = TRUE)) 
-
-
-indeksfondid_koos <- left_join(indeksfondid_koos, k6ik_koos, by = "Kuupäev") %>%
-  mutate(indeks_maht_protsent = round(100*maht/maht_kokku, 1), indeks_investoreid_protsent = round(100*investoreid/investoreid_kokku, 1)) %>%
-  left_join(tuleva, by = "Kuupäev") %>%
-  mutate(tuleva_maht_protsent = round(100*maht_tuleva/maht_kokku, 2), tuleva_investoreid_protsent = round(100*investoreid_tuleva/investoreid_kokku, 2))
-
-```
-
-#### Osakaal
-```{r}
-indeks_pikk <- indeksfondid_koos %>%
-  pivot_longer(cols = c(indeks_maht_protsent, indeks_investoreid_protsent)) %>%
-  mutate(name = fct_recode(name, "maht" = "indeks_maht_protsent", "investoreid" = "indeks_investoreid_protsent")) %>%
-  mutate(value.pc = paste0(value, "%"))
-
-indeks_pikk %>%
-  select(Kuupäev, name, value) %>%
-  pivot_wider(names_from = name, values_from = value) %>%
-  write_csv(file = "koguturg_indeksfondid_osakaal.csv")
-
-p <- indeks_pikk %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  geom_blank(aes(x = min(Kuupäev), y = 0)) +
-  geom_point(data = filter(indeks_pikk, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(indeks_pikk, Kuupäev == max(Kuupäev)), aes(label = value.pc), nudge_x = 200, color = "orange") +
-  theme_ft_rc() +
-  scale_color_ft("") +
-  labs(title = "Mitu protsenti teise samba turust indeksfondides",
-       x = "kuupäev", y = "indeksfondide osakaal, %")
-ggsave(p, file = "osakaal.png", height = 5, width = 7, scale = 1)
-ggplotly(p)
-```
-
-
-#### Maht(milj. €)
-
-```{r}
-options(scipen=999)
-indeksfondid_koos <- indeksfondid_koos %>%
-  mutate(maht_milj = round(maht/1000000, 1))
-
-p <- indeksfondid_koos %>%
-  mutate(maht = round(maht/1000000,1)) %>%
-  ggplot(aes(x = Kuupäev, y = maht)) +
-  geom_line() +
-  theme_ft_rc() +
-  geom_blank(aes(x = min(Kuupäev), y = 0)) +
-  labs(title = "Indeksfondide maht teises sambas", x = "kuupäev", y = "maht (miljonit eurot)") +
-  geom_point(data = filter(indeksfondid_koos, Kuupäev == max(Kuupäev)), aes(y = maht_milj), size = 2, color = "orange") +
-  geom_text(data = filter(indeksfondid_koos, Kuupäev == max(Kuupäev)), aes(label = maht_milj, y = maht_milj), nudge_x = 150, color = "orange")
-
-ggplotly(p)
-```
-
-
-
-#### Investoreid
-```{r}
-options(scipen=999)
-
-indeksfondid_koos <- indeksfondid_koos %>%
-    mutate(investoreid_label = format(investoreid, big.mark = " ", decimal.mark = ","))
-
-  
-p <- indeksfondid_koos %>%
-  ggplot(aes(x = Kuupäev, y = investoreid)) +
-  geom_line() +
-  theme_ft_rc() +
-  geom_blank(aes(x = min(Kuupäev), y = 0)) +
-  labs(title = "Indeksfondide investorite arv teises sambas", x = "kuupäev") +
-  geom_point(data = filter(indeksfondid_koos, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(indeksfondid_koos, Kuupäev == max(Kuupäev)), aes(label = investoreid_label), nudge_x = 180, color = "orange")
-
-ggplotly(p)
-```
-
-#### Koguturg maht
-
-```{r}
-fondid_koos <- fondid_info %>%
-  group_by(Kuupäev) %>%
-  summarise(maht_turg = sum(maht, na.rm = TRUE), investoreid_turg = sum(`investeerijate arv`, na.rm = TRUE)) %>%
-  full_join(indeksfondid_koos, by = "Kuupäev")
-
-fondid_graaf <- fondid_koos %>%
-  pivot_longer(cols = c(maht, maht_turg)) %>%
-  mutate(name = fct_recode(name, "Koguturu maht" = "maht_turg", "Indeksfondide maht" = "maht")) %>%
-  mutate(name = fct_rev(name)) %>%
-  mutate(value = round(value/1000000, 1)) %>%
-  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
-
-p <- fondid_graaf %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  theme_ft_rc() +
-  scale_color_ft(name = "") +
-  labs(title = "Teise samba maht", x = "kuupäev", y = "maht (milj eurot)") +
-  geom_point(data = filter(fondid_graaf, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(fondid_graaf, Kuupäev == max(Kuupäev)), aes(label = value_label), nudge_y = 200, color = "orange") +
-  geom_blank(aes(x = max(Kuupäev) + 100, y = min(0)))
-#ggsave(p, file = "teine_sammas_kokku_indeks_maht.png", height = 5, width =7, scale = 1, bg = "black")
-ggplotly(p)
-
-
-write_csv(fondid_koos, file = "koguturg_koguinfo.csv")
-
-```
-
-
-```{r}
-fondid_graaf2 <- fondid_koos %>%
-  mutate(maht_juhitud = maht_turg - maht) %>%
-  pivot_longer(cols = c(maht, maht_juhitud)) %>%
-  mutate(name = fct_recode(name, "aktiivselt juhitud fondid" = "maht_juhitud", "indeksifondid" = "maht")) %>%
-  mutate(name = fct_rev(name)) %>%
-  mutate(value = round(value/1000000, 0)) %>%
-  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
-
-p <- fondid_graaf2 %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  theme_ipsum_rc() +
-  scale_color_ipsum(name = "") +
-#  scale_y_continuous(trans = "log", breaks = c(1000, 5000))+
-  labs(title = "Teise samba pensionifondide maht", x = "", y = "varade maht (milj eurot)", caption = paste0("kuni ", max(fondid_graaf2$Kuupäev))) +
-  geom_point(data = filter(fondid_graaf2, Kuupäev == max(Kuupäev)), aes(color = name), size = 2) +
-  geom_text(data = filter(fondid_graaf2, Kuupäev == max(Kuupäev)), aes(label = value_label, color = name), nudge_y = 250, show.legend = FALSE) +
-  geom_blank(aes(x = max(Kuupäev) + 100, y = min(0))) +
-  scale_x_date(expand = c(0,0), date_breaks = "1 year", date_labels = "%Y") +
-  theme(legend.position = "bottom", axis.title.x = element_blank())
-#p
-
-ggsave(p, file = "teine_sammas_kokku_indeks_vs_juhitud_maht.png", height = 7, width = 16, scale = 0.7, bg = "white")
-
-p <- p + theme(legend.position = "right") 
-  
-#p
-ggsave(p, file = "teine_sammas_kokku_indeks_vs_juhitud_maht57.png", height = 5, width = 7, scale = 1.1, bg = "white")
-
-
-```
-
-
-
-
-#### Koguturg investoreid
-
-```{r}
-
-fondid_graaf_inv <- fondid_koos %>%
-  mutate(akt_juh_fond = investoreid_turg - investoreid) %>%
-  pivot_longer(cols = c(investoreid, akt_juh_fond)) %>%
-  mutate(name = fct_recode(name, "Aktiivselt juhitud fondi kogujad" = "akt_juh_fond", "Indeksifondi kogujaid" = "investoreid")) %>%
-  mutate(value_label = format(value, big.mark = " ", decimal.mark = ","))
-
-p <- fondid_graaf_inv %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  theme_ft_rc() +
-  scale_color_ft(name = "") +
-  labs(title = "Teise sambasse kogujad", x = "kuupäev", y = "inimesi") +
-  geom_point(data = filter(fondid_graaf_inv, Kuupäev == max(Kuupäev)), size = 2, color = "orange") +
-  geom_text(data = filter(fondid_graaf_inv, Kuupäev == max(Kuupäev)), aes(label = value_label), nudge_y = 30000, color = "orange") +
-  geom_blank(aes(x = max(Kuupäev) + 100, y = min(0)))
-
-ggsave(p, file = "teine_sammas_kokku_indeks.png", height = 5, width =7, scale = 1, bg = "black")
-ggplotly(p)
-```
-
-#### Tuleva turuosa
-
-```{r}
-graafikule <- fondid_koos %>%
-  pivot_longer(cols = c(tuleva_investoreid_protsent, tuleva_maht_protsent)) %>%
-  mutate(name = fct_recode(name, "investoritest" = "tuleva_investoreid_protsent", "mahust" = "tuleva_maht_protsent")) %>%
-  mutate(name = fct_rev(name)) %>%
-  mutate(label = paste0(round(value, 1), "%"))
-
-
-graafikule2 <- tuleva_koos_volakiri %>%
-  rename(maht_tuleva_vk = maht_tuleva, investoreid_tuleva_vk = investoreid_tuleva) %>%
-  full_join(graafikule, by = "Kuupäev") %>%
-  mutate("maht_tuleva_osakaal" = maht_tuleva_vk/maht_turg*100, maht_tuleva_investoreid = investoreid_tuleva_vk/investoreid_turg*100) %>%
-  select(-name, -value) %>%
-  pivot_longer(cols = c(maht_tuleva_osakaal, maht_tuleva_investoreid)) %>%
-  mutate(name = fct_recode(name, "mahust" = "maht_tuleva_osakaal", "investoritest" = "maht_tuleva_investoreid")) %>%
-  mutate(label = paste0(round(value, 1), "%")) %>%
-  mutate(name = fct_relevel(name, "mahust", "investoritest"))
-
-maxdate <- max(graafikule$Kuupäev)
-
-p <- graafikule %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  theme_ft_rc() +
-  scale_color_ft(name = "") +
-  labs(title = "Tuleva turuosa", x = "kuupäev", y = "turuosa (%)") +
-  geom_point(data = filter(graafikule, Kuupäev == max(Kuupäev)), size = 2, aes(color = name)) +
-  geom_text(data = filter(graafikule, Kuupäev == max(Kuupäev)), aes(label = label, color = name), nudge_y = 0.6, show.legend = FALSE) +
-  geom_blank(aes(x = max(Kuupäev) + 100, y = min(0)))
-#ggsave(p, file = "tuleva_turuosa.png", height = 5, width = 7, scale = 1, bg = "black")
- ggplotly(p)
- 
- 
- p <- p + theme_ipsum_rc() + scale_color_ipsum("") +
-   labs(caption = paste0("andmed kuni ", maxdate))
- 
- ggsave(p, file = "tulevaturuosa.png", height = 5, width = 7, scale = 0.8, bg = "white")
-
-p <- graafikule2 %>%
-  ggplot(aes(x = Kuupäev, y = value)) +
-  geom_line(aes(color = name)) +
-  theme_ft_rc() +
-  scale_color_manual(name = "", values = c("mahust" = "#002F63", "investoritest" = "#00AEEA")) +
-  labs(title = "Tuleva turuosa", x = "kuupäev", y = "turuosa (%)") +
-  geom_point(data = filter(graafikule2, Kuupäev == max(Kuupäev)), size = 2, aes(color = name)) +
-  geom_text(data = filter(graafikule2, Kuupäev == max(Kuupäev)), aes(label = label, color = name), nudge_y = 0.6, show.legend = FALSE) +
-  geom_blank(aes(x = max(Kuupäev) + 100, y = min(0)))
-#ggsave(p, file = "tuleva_turuosa.png", height = 5, width = 7, scale = 1, bg = "black")
-
- 
- p <- p + theme_ipsum_rc()  +
-   labs(caption = paste0("andmed kuni ", maxdate))
- 
- ggsave(p, file = "tulevaturuosa_inclTUK00.png", height = 5, width = 7, scale = 0.8, bg = "#EDF7FE")
-
-
-
-```
-
-
-:::
-
-
-# Turuosa indeksfondidest
-
-::: panel-tabset
-
-#### Turuosa investoreid
-
-```{r message=FALSE, warning=FALSE, include=FALSE}
-indeksfondid <- indeksfondid %>%
-  group_by(Kuupäev) %>%
-  mutate(turuosa_inv = round(100*`investeerijate arv`/sum(`investeerijate arv`, na.rm = TRUE), 1),
-         turuosa_maht = round(100*maht/sum(maht, na.rm = TRUE), 1))
-```
-
-
-
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(`investeerijate arv`))
-
-
-p <- indeksfondid %>% 
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = turuosa_inv)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "turuosa (%)", title = "Turuosa investorite arvu järgi")
-ggplotly(p)
-```
-
-#### Turuosa maht
-
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(turuosa_maht))
-p <- indeksfondid %>%
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = turuosa_maht)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "turuosa (%)", title = "Turuosa mahu järgi")
-ggplotly(p)
-```
-
-
-#### Investoreid
-
-```{r}
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(`investeerijate arv`))
-
-
-p <- indeksfondid %>% 
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = `investeerijate arv`)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "investeerijate arv", title = "Investoreid fondis")
-ggplotly(p)
-```
-
-
-#### Maht
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(maht))
-indeksfondid <- indeksfondid %>%
-  mutate(maht_milj = round(maht/1000000,1))
-
-p <- indeksfondid %>%
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = maht_milj)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "fondi maht (milj eurot)", title = "Fondide mahud")
-ggplotly(p)
-
-
-write_csv(indeksfondid, file = "indeksfondide_turuosa.csv")
-```
-:::
-
-
-```{r}
-# helper to plot monthly changes for investors or volume
-
-# Selgitav tühi graafik olukorraks, kus andmeid ei jätku. Parem anda lugejale
-# (ja logile) selge sõnum kui lasta kogu raporti renderdusel katkeda.
-tyhi_graafik <- function(pealkiri, selgitus) {
-  ggplot() +
-    annotate("text", x = 0, y = 0, label = selgitus, colour = "grey70", size = 4.5) +
-    theme_ft_rc() +
-    theme(axis.text = element_blank(), axis.ticks = element_blank(),
-          panel.grid = element_blank()) +
-    labs(title = pealkiri, x = NULL, y = NULL)
-}
-
-make_change_plot <- function(data, months_back, var){
-  maksp2ev <- max(data$Kuupäev)
-  minp2ev <- maksp2ev %m-% months(months_back)
-
-  if(var == "maht") {
-    x_label <- "muutus (milj. eurot)"
-    title_prefix <- "Maht: "
-  } else {
-    x_label <- "muutus"
-    title_prefix <- "Investorite arv: "
+eelmine <- if (file.exists(EELMINE)) tryCatch(readRDS(EELMINE), error = function(e) NULL) else NULL
+salvesta_eelmine <- TRUE
+if (!is.null(eelmine) && max(toores$Kuupäev) >= max(eelmine$Kuupäev)) {
+  kadunud <- setdiff(unique(eelmine$kood), unique(toores$kood))
+  if (length(kadunud) > 3) {
+    # Nii palju korraga ei sulgeta: tõenäoliselt on eksport ajutiselt vigane.
+    # Eelmist seisu üle ei kirjuta, et järgmine jooks saaks uuesti otsustada.
+    message("::warning::Ekspordist puudub korraga ", length(kadunud),
+            " fondi — ei arhiveeri (", paste(kadunud, collapse = ", "), ")")
+    salvesta_eelmine <- FALSE
+  } else if (length(kadunud) > 0) {
+    # Upsert: kui fond on arhiivis (nt varasema ajutise kadumise tõttu), aga
+    # eelmises seisus on tal pikem ajalugu, asendame arhiivi read.
+    uuemad <- eelmine %>% filter(kood %in% kadunud) %>% group_by(kood) %>%
+      filter(!kood %in% arhiiv$kood |
+               max(Kuupäev) > max(c(arhiiv$Kuupäev[arhiiv$kood == first(kood)], as.Date("1900-01-01")))) %>%
+      ungroup()
+    if (nrow(uuemad) > 0) {
+      message("::notice::Fond(id) kadusid ekspordist, lisan arhiivi: ",
+              paste(unique(uuemad$kood), collapse = ", "))
+      arhiiv <- bind_rows(filter(arhiiv, !kood %in% uuemad$kood),
+                          select(uuemad, Kuupäev, kood, Fond, maht, inv, NAV)) %>%
+        arrange(kood, Kuupäev)
+      dir.create(dirname(ARHIIV), showWarnings = FALSE)
+      write_csv(arhiiv, ARHIIV)
+    }
   }
-  pealkiri <- paste0(title_prefix, minp2ev, " - ", maksp2ev)
+}
+if (salvesta_eelmine) saveRDS(toores, EELMINE)
 
-  aken <- data %>%
+koos <- bind_rows(toores, filter(arhiiv, !kood %in% toores$kood))
+
+# --- Millised päevad on täielikud --------------------------------------------
+# Viimane päev võib olla osaliselt avaldatud. Lõpust lõikame ära päevad, kus
+# mõnel eelmisel päeval olemas olnud fondil puudub maht, NAV või investorite
+# arv, või puudub ametlik koguturg.
+kp_koik <- sort(unique(toores$Kuupäev[!is.na(toores$maht)]))
+kp_koik <- kp_koik[kp_koik >= alates]
+paev_taielik <- function(k) {
+  eel <- max(kp_koik[kp_koik < k])
+  elus <- toores$kood[toores$Kuupäev == eel & !is.na(toores$maht)]
+  tana <- toores[toores$Kuupäev == k, ]
+  ok <- tana$kood[!is.na(tana$maht) & !is.na(tana$NAV) & !is.na(tana$inv)]
+  all(elus %in% ok) && k %in% kokku$Kuupäev
+}
+while (length(kp_koik) > 2 && !paev_taielik(kp_koik[length(kp_koik)])) {
+  message("Jätan välja osaliselt avaldatud päeva ", kp_koik[length(kp_koik)])
+  kp_koik <- kp_koik[-length(kp_koik)]
+}
+kuupaevad <- kp_koik
+viimane_kp <- max(kuupaevad)
+
+# --- Paneel: iga fond iga päev tema eluea jooksul ----------------------------
+# Lünga päeval täidame taseme eelmise väärtusega, aga rahavoogu sel päeval ei
+# arvuta (muidu paistaks puuduv avaldamine nullmuutusena või kunstliku voona).
+# Järgmisel päeval on voog kahe päeva peale kokku.
+paneel0 <- koos %>%
+  filter(Kuupäev %in% kuupaevad) %>%
+  group_by(kood) %>% mutate(Fond = last(na.omit(Fond))) %>% ungroup() %>%
+  filter(!is.na(Fond)) %>%
+  complete(nesting(kood, Fond), Kuupäev = kuupaevad) %>%
+  group_by(kood) %>% arrange(Kuupäev, .by_group = TRUE) %>%
+  mutate(alg = min(Kuupäev[!is.na(maht)]), lopp = max(Kuupäev[!is.na(maht)])) %>%
+  filter(Kuupäev >= alg, Kuupäev <= lopp) %>%
+  mutate(lunk = is.na(maht) | is.na(NAV),
+         # Mõlemad tühjaks, et järgmisel päeval viitaksid maht_eel ja NAV
+         # samale (viimasele täielikule) päevale
+         maht = if_else(lunk, NA_real_, maht), NAV = if_else(lunk, NA_real_, NAV)) %>%
+  fill(maht, inv, NAV, .direction = "down") %>%
+  mutate(
+    maht_eel = lag(maht),
+    tootlus = coalesce(NAV / lag(NAV), 1),
+    turuefekt = maht_eel * (tootlus - 1),
+    # Netorahavoog = mahu muutus, millest on maha arvatud fondi enda tootlus
+    voog = maht - maht_eel * tootlus,
+    voog = if_else(lunk, NA_real_, voog),
+    # Esimene päev: andmete algusest olemas olnud fondi puhul pole see
+    # sissevool; hiljem loodud fondi puhul on kogu algmaht sissevool.
+    voog = if_else(row_number() == 1,
+                   if_else(alg == min(kuupaevad), NA_real_, maht), voog)
+  ) %>%
+  ungroup() %>%
+  lisa_meta() %>%
+  mutate(yhinemine = 0)
+
+# --- Jääk: suletud fondid, mida ei ekspordis ega arhiivis pole ---------------
+# R_t = ametlik koguturg − meie fondide summa. Need on (ammu) suletud fondid.
+turu_tootlus <- paneel0 %>%
+  filter(!is.na(maht_eel), maht_eel > 0, !lunk) %>%
+  group_by(Kuupäev) %>%
+  summarise(g = sum(maht_eel * tootlus) / sum(maht_eel), .groups = "drop")
+jaak <- tibble(Kuupäev = kuupaevad) %>%
+  left_join(kokku, by = "Kuupäev") %>%
+  left_join(paneel0 %>% group_by(Kuupäev) %>%
+              summarise(S = sum(maht), lunki = any(lunk), .groups = "drop"),
+            by = "Kuupäev") %>%
+  mutate(T_puudub = is.na(T)) %>%
+  left_join(turu_tootlus, by = "Kuupäev") %>%
+  mutate(R = T - S, g = coalesce(g, 1)) %>%
+  fill(R, .direction = "down") %>%
+  mutate(R = coalesce(R, 0))
+if (any(jaak$R < -1e5)) {
+  message("::warning::Fondide summa ületab ametlikku koguturgu (max ",
+          fmt_milj(-min(jaak$R)), ") — mõni fond võib olla topelt")
+}
+jaak <- jaak %>% mutate(R = if_else(R < 1e4, 0, R))
+
+# --- Ühinemiste automaatne tuvastus ------------------------------------------
+# Päeval d "kaob" raha, kui (a) arhiivis olev fond lõpetab või (b) jääk R
+# langeb järsult (≥ 25 % ja ≥ 1 mln €; tavalised väljamaksed jäägist on
+# väiksemad). Kaduvat summat V otsime fondidest, mille rahavoog sel päeval
+# on ebatavaliselt suur ja positiivne: need on vastuvõtvad fondid.
+# Fondi tavapärane päevane |voog| (eelneva ~120 päeva 95. protsentiil)
+libisev_kvantiil <- function(x, n, q) {
+  vapply(seq_along(x), function(i) {
+    if (i < 10) return(NA_real_)
+    unname(quantile(x[max(1, i - n):(i - 1)], q, na.rm = TRUE))
+  }, numeric(1))
+}
+tavaline_voog <- paneel0 %>%
+  filter(!is.na(voog)) %>%
+  group_by(kood) %>% arrange(Kuupäev, .by_group = TRUE) %>%
+  mutate(tavaline = libisev_kvantiil(abs(voog), 120, 0.95)) %>%
+  ungroup() %>% select(kood, Kuupäev, tavaline)
+
+jargmine_paev <- function(x) {
+  as.Date(vapply(x, function(k) { j <- kuupaevad[kuupaevad > k]
+    if (length(j)) as.numeric(min(j)) else NA_real_ }, numeric(1)))
+}
+lopetavad <- paneel0 %>% filter(lopp < viimane_kp, Kuupäev == lopp) %>%
+  mutate(d = jargmine_paev(Kuupäev))
+
+syndmused <- list()
+for (i in seq_along(kuupaevad)[-1]) {
+  d <- kuupaevad[i]; p <- kuupaevad[i - 1]
+  j_d <- jaak[i, ]; R_p <- jaak$R[i - 1]
+  sulguvad <- filter(lopetavad, d == !!d)
+  arh_kadu <- sum(sulguvad$maht * j_d$g)
+  jaagi_kadu <- max(0, R_p * j_d$g - j_d$R)
+  if (jaagi_kadu < 1e6 || jaagi_kadu < 0.25 * R_p) jaagi_kadu <- 0
+  # Lünga või puuduva koguturu päeval on jääk ebausaldusväärne
+  if (any(jaak$T_puudub[c(i - 1, i)]) || any(jaak$lunki[c(i - 1, i)], na.rm = TRUE)) jaagi_kadu <- 0
+  V <- arh_kadu + jaagi_kadu
+  if (V < 1e6) next
+
+  kand <- paneel0 %>%
+    filter(Kuupäev == d, lopp > d | lopp == viimane_kp, !is.na(voog), voog > 0) %>%
+    left_join(tavaline_voog, by = c("kood", "Kuupäev")) %>%
+    # Uuel fondil pole veel tavapärast voogu: ta ei saa olla vastuvõtja
+    # (muidu paistaks käivitamise sissevool ühinemisena)
+    filter(!is.na(tavaline) | alg == min(kuupaevad),
+           voog >= max(0.02 * V, 1e6), voog >= 5 * coalesce(tavaline, 0))
+  # Arhiveeritud fondi valitseja on teada: eelistame sama valitseja fonde
+  if (nrow(sulguvad) > 0) {
+    samad <- filter(kand, valitseja %in% sulguvad$valitseja)
+    if (sum(samad$voog) >= 0.5 * V) kand <- samad
+  }
+  if (sum(kand$voog) < 0.5 * V) {
+    message("Päeval ", d, " kadus ", fmt_milj(V), " ilma selge vastuvõtjata — käsitlen väljavooluna")
+    syndmused[[length(syndmused) + 1]] <- tibble(Kuupäev = d, arh_kadu, jaagi_kadu,
+      kood = NA_character_, ylekanne = 0)
+    next
+  }
+  ylekanne <- if (sum(kand$voog) >= V) V * kand$voog / sum(kand$voog) else kand$voog
+  message("Ühinemine ", d, ": ", fmt_milj(V), " → ",
+          paste0(kand$kood, " (", fmt_milj(ylekanne), ")", collapse = ", "))
+  syndmused[[length(syndmused) + 1]] <- tibble(Kuupäev = d, arh_kadu, jaagi_kadu,
+    kood = kand$kood, ylekanne = ylekanne)
+}
+syndmused <- bind_rows(tibble(Kuupäev = as.Date(character()), arh_kadu = numeric(),
+                               jaagi_kadu = numeric(), kood = character(), ylekanne = numeric()),
+                        syndmused)
+yhinemised <- syndmused %>% filter(!is.na(kood))
+
+# Vastuvõtva fondi ülekanne ei ole uus raha: tõstame selle rahavoost eraldi
+paneel0 <- paneel0 %>%
+  left_join(yhinemised %>% select(Kuupäev, kood, ylekanne), by = c("Kuupäev", "kood")) %>%
+  mutate(yhinemine = coalesce(ylekanne, 0), voog = voog - yhinemine) %>%
+  select(-ylekanne)
+
+# Lõpetava (arhiveeritud) fondi viimane samm: tema raha läheb kas teise fondi
+# (ühinemine) või välja (väljavool). Lisame sulgemispäevale nullmahuga rea.
+# Kui vastuvõtjad katsid ainult osa kadunud summast, on ülejäänu väljavool.
+katmine <- syndmused %>% group_by(Kuupäev) %>%
+  summarise(kaetud = min(1, sum(ylekanne) / (first(arh_kadu) + first(jaagi_kadu))), .groups = "drop")
+sulgemised <- lopetavad %>%
+  left_join(rename(katmine, d = Kuupäev), by = "d") %>%
+  transmute(Kuupäev = d, kood, Fond, nimi, valitseja, tyyp, maht = 0, inv = 0, NAV = NA_real_,
+            kadu = -maht, kaetud = coalesce(kaetud, 0),
+            yhinemine = kadu * kaetud, voog = kadu * (1 - kaetud), turuefekt = 0) %>%
+  select(-kadu, -kaetud)
+
+# --- Jäägi jagamine kihtideks -------------------------------------------------
+# Jääk koosneb fondidest, mis hiljem ühinesid teadaolevate vastuvõtjatega.
+# Igale vastuvõtjale tekib "kiht" (sama valitseja ja tüüp), mille suurus enne
+# ühinemist on proportsionaalne jäägiga. Pärast viimast ühinemist järele jääv
+# jääk on "Muu" (nt fond, mis likvideeriti ilma ühinemiseta).
+jaagi_syndmused <- yhinemised %>%
+  group_by(Kuupäev) %>% filter(first(jaagi_kadu) > 0) %>%
+  mutate(osa_jaagist = jaagi_kadu / (jaagi_kadu + arh_kadu),
+         X = ylekanne * osa_jaagist) %>% ungroup() %>%
+  arrange(Kuupäev)
+kihid <- tibble()
+if (any(jaak$R > 0)) {
+  sdk <- sort(unique(jaagi_syndmused$Kuupäev))
+  # w: kihtide osakaalud jäägis; liigume ajas tagasi
+  w <- c(muu = 1)
+  piirid <- c(sdk, max(kuupaevad) + 1)
+  osad <- list()
+  for (j in rev(seq_along(piirid))) {
+    vahemik_lopp <- piirid[j]
+    vahemik_alg  <- if (j == 1) min(kuupaevad) else piirid[j - 1]
+    if (j <= length(sdk)) {
+      # Enne sündmust j: lisandub sündmuse j kiht, ülejäänu jaguneb nagu pärast
+      ev <- filter(jaagi_syndmused, Kuupäev == sdk[j])
+      i_d <- match(sdk[j], kuupaevad)
+      R_p <- jaak$R[i_d - 1] * jaak$g[i_d]
+      if (sum(ev$X) > 1.02 * R_p) message("::warning::Ühinemine ", sdk[j], ": ülekanne ületab jääki")
+      s <- min(1, sum(ev$X) / R_p)
+      w <- c(w * (1 - s), setNames(s * ev$X / sum(ev$X), paste0(ev$kood, "@", sdk[j])))
+    }
+    osad[[j]] <- tibble(Kuupäev = kuupaevad[kuupaevad >= vahemik_alg & kuupaevad < vahemik_lopp]) %>%
+      crossing(tibble(kiht = names(w), w = unname(w)))
+  }
+  kihid <- bind_rows(osad) %>%
+    left_join(select(jaak, Kuupäev, R, g), by = "Kuupäev") %>%
+    mutate(maht = R * w, vastuvotja = str_remove(kiht, "@.*")) %>%
+    group_by(kiht) %>% filter(any(maht > 0)) %>% ungroup()
+}
+kihi_read <- if (nrow(kihid) == 0) tibble() else {
+  meta_v <- paneel0 %>% distinct(kood, nimi, valitseja, tyyp)
+  rec_tootlus <- paneel0 %>% select(Kuupäev, kood, tootlus)
+  kihid %>%
+    left_join(meta_v, by = c(vastuvotja = "kood")) %>%
+    left_join(rec_tootlus, by = c("Kuupäev", vastuvotja = "kood")) %>%
+    mutate(tootlus = coalesce(tootlus, g),
+           valitseja = coalesce(valitseja, "Muu"), tyyp = coalesce(tyyp, "Aktiivne"),
+           nimi = if_else(kiht == "muu", "Suletud fondid",
+                          paste0("Suletud fondid → ", nimi)),
+           kood = paste0("_suletud_", kiht), Fond = nimi) %>%
+    group_by(kood) %>% arrange(Kuupäev, .by_group = TRUE) %>%
+    mutate(turuefekt = lag(maht) * (tootlus - 1),
+           voog = maht - lag(maht) * tootlus,
+           # Kiht järgmisel päeval pärast lõppu: ühinemine (raha liigub vastuvõtjale)
+           voog = if_else(row_number() == 1, NA_real_, voog)) %>%
     ungroup() %>%
-    filter(Kuupäev > minp2ev)
+    transmute(Kuupäev, kood, Fond, nimi, valitseja, tyyp, maht, inv = NA_real_, NAV = NA_real_,
+              voog, turuefekt, yhinemine = 0)
+}
+# Kihi lõppemine ühinemispäeval (vastuvõtjale läinud summa on seal + yhinemine)
+kihi_lopud <- if (nrow(kihid) == 0) tibble() else {
+  kihi_read %>% filter(!str_detect(kood, "_muu$")) %>%
+    group_by(kood) %>% slice_max(Kuupäev, n = 1) %>% ungroup() %>%
+    mutate(Kuupäev = jargmine_paev(Kuupäev)) %>%
+    filter(!is.na(Kuupäev)) %>%
+    left_join(select(jaak, Kuupäev, g), by = "Kuupäev") %>%
+    mutate(yhinemine = -maht * g, maht = 0, voog = 0, turuefekt = 0) %>% select(-g)
+}
 
-  # Muutuse arvutamiseks on vaja kahte otspunkti. Kui aknas on ainult üks
-  # kuupäev (nt pikem andmekatkestus Pensionikeskuses), jätame graafiku vahele.
-  if (nrow(aken) == 0) {
-    message("make_change_plot (", var, ", ", months_back, " kuud): aknas ",
-            minp2ev, " - ", maksp2ev, " ei ole ühtegi rida, jätan graafiku vahele")
-    return(tyhi_graafik(pealkiri, "andmeid ei ole"))
-  }
-  otsad <- range(aken$Kuupäev, na.rm = TRUE)
-  if (otsad[1] == otsad[2]) {
-    message("make_change_plot (", var, ", ", months_back, " kuud): aknas on ainult ",
-            "üks kuupäev (", otsad[1], "), jätan graafiku vahele")
-    return(tyhi_graafik(pealkiri, "andmeid ei ole piisavalt"))
-  }
+paneel <- bind_rows(
+  paneel0 %>% select(Kuupäev, kood, Fond, nimi, valitseja, tyyp, maht, inv, NAV, voog, turuefekt, yhinemine),
+  sulgemised, kihi_read, kihi_lopud
+) %>% arrange(Kuupäev, kood)
 
-  kuuinfo <- aken %>%
-    filter(Kuupäev %in% otsad) %>%
-    select(Lühinimi, !!sym(var), Kuupäev) %>%
-    # Ühinenud fondid võivad jagada sama lühinime (vt case_when ülalpool). Ilma
-    # values_fn'ita teeks pivot_wider neist list-veeru ja kogu raport kukuks.
-    pivot_wider(
-      names_from = Kuupäev,
-      values_from = !!sym(var),
-      names_prefix = "kp_",
-      values_fn = function(x) if (all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
-    )
+# Kontroll: ühinemised on turu sees ülekanded, päeva summa peaks olema ~0
+yhin_summa <- paneel %>% filter(yhinemine != 0) %>% group_by(Kuupäev) %>%
+  summarise(s = sum(yhinemine), .groups = "drop") %>% filter(abs(s) > 1e6)
+if (nrow(yhin_summa) > 0) {
+  message("::warning::Ühinemise ülekanded ei tasakaalu: ",
+          paste0(yhin_summa$Kuupäev, " (", fmt_milj(yhin_summa$s, 1), ")", collapse = ", "))
+}
 
-  # Nimetame otspunktid kuupäeva, mitte veeru asukoha järgi — pivot_wider'i
-  # veergude järjekord sõltub ridade järjekorrast, mitte kuupäevast.
-  eelmine_veerg <- paste0("kp_", otsad[1])
-  tana_veerg <- paste0("kp_", otsad[2])
-  if (!all(c(eelmine_veerg, tana_veerg) %in% names(kuuinfo))) {
-    message("make_change_plot (", var, ", ", months_back, " kuud): otspunktide ",
-            "veerud puuduvad, jätan graafiku vahele")
-    return(tyhi_graafik(pealkiri, "andmeid ei ole piisavalt"))
-  }
-  kuuinfo <- kuuinfo %>%
-    rename(eelmine_kuu = !!sym(eelmine_veerg), täna = !!sym(tana_veerg))
+# Kontroll: kogusumma peab klappima ametliku koguturuga
+vahe <- paneel %>% group_by(Kuupäev) %>% summarise(S = sum(maht), .groups = "drop") %>%
+  left_join(kokku, by = "Kuupäev") %>% mutate(v = abs(S - T))
+if (max(vahe$v, na.rm = TRUE) > 1e5) {
+  message("::warning::Koguturg ei klapi ametlikuga, max vahe ", fmt_milj(max(vahe$v, na.rm = TRUE), 1))
+}
+```
 
-  if(var == "maht") {
-    kuuinfo_graaf <- kuuinfo %>%
-      mutate(muutus = round((täna - eelmine_kuu)/1000000, 1),
-             muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus * 1000000 / eelmine_kuu), NA_real_))
-  } else {
-    kuuinfo_graaf <- kuuinfo %>%
-      mutate(muutus = täna - eelmine_kuu,
-             muutus_pc = if_else(eelmine_kuu != 0, round(100 * muutus / eelmine_kuu, 1), NA_real_))
-  }
+```{r arvutused}
+# --- Turu kogunumbrid päevade kaupa ----------------------------------------
+turg_paev <- paneel %>%
+  group_by(Kuupäev) %>%
+  summarise(
+    # NB! indeks/Tuleva enne kogusummat — summarise kirjutaks `maht` üle
+    maht_indeks = sum(maht[tyyp == "Indeks"], na.rm = TRUE),
+    inv_indeks  = sum(inv[tyyp == "Indeks"], na.rm = TRUE),
+    maht_tuleva = sum(maht[valitseja == "Tuleva"], na.rm = TRUE),
+    inv_tuleva  = sum(inv[valitseja == "Tuleva"], na.rm = TRUE),
+    maht_tuk75  = sum(maht[kood == "TUK75"], na.rm = TRUE),   # CSV: varasem tähendus
+    inv_tuk75   = sum(inv[kood == "TUK75"], na.rm = TRUE),
+    maht = sum(maht, na.rm = TRUE), inv = sum(inv, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(osa_maht = 100 * maht_indeks / maht, osa_inv = 100 * inv_indeks / inv)
 
-  # Fondid, kellel üks otspunkt puudub või on loetamatu (Pensionikeskuse
-  # andmeauk), jätame graafikult välja — tulpa nagunii joonistada ei saa.
-  puuduvad_fondid <- kuuinfo_graaf$Lühinimi[is.na(kuuinfo_graaf$muutus)]
-  if (length(puuduvad_fondid) > 0) {
-    message("make_change_plot (", var, ", ", months_back, " kuud): andmed puuduvad, ",
-            "jätan graafikult välja: ", paste(puuduvad_fondid, collapse = ", "))
-    kuuinfo_graaf <- filter(kuuinfo_graaf, !is.na(muutus))
-  }
-  if (nrow(kuuinfo_graaf) == 0) {
-    message("make_change_plot (", var, ", ", months_back, " kuud): ühelgi fondil ",
-            "ei ole mõlemat otspunkti, jätan graafiku vahele")
-    return(tyhi_graafik(pealkiri, "andmeid ei ole"))
-  }
+lahim <- function(kp) max(kuupaevad[kuupaevad <= kp])
+kp_aasta_tagasi <- lahim(viimane_kp %m-% years(1))
+t_nyyd <- filter(turg_paev, Kuupäev == viimane_kp)
+t_eel  <- filter(turg_paev, Kuupäev == kp_aasta_tagasi)
 
-  kuuinfo_graaf <- kuuinfo_graaf %>%
-    # factor() on siin oluline: forcats 1.0.1 fct_reorder eemaldab NA-d
-    # originaalvektorist (.f), aga võrdleb tulemust juba varem arvutatud
-    # faktoritasemetega — character-sisendi puhul annab see vea
-    # "idx must contain one integer for each level of f". Faktorina jäävad
-    # tasemed alles ka siis, kui mõni rida välja langeb.
-    mutate(Lühinimi = fct_reorder(factor(Lühinimi), muutus)) %>%
-    mutate(ette = case_when(
-      muutus > 0 ~ "+",
-      muutus < 0 ~ "",
-      TRUE ~ ""
-    )) %>%
-    mutate(formatted = format(muutus, big.mark = " ", decimal.mark = ","),
-           formatted = str_trim(formatted),
-           label = paste0(ette, formatted, "\n", muutus_pc, "%"))
+# --- Nädalaseeria graafikutele (nädala viimane kauplemispäev) ---------------
+nadala_kp <- tibble(Kuupäev = kuupaevad) %>%
+  group_by(n = floor_date(Kuupäev, "week", week_start = 1)) %>%
+  summarise(Kuupäev = max(Kuupäev), .groups = "drop") %>% pull(Kuupäev)
 
-  label_pos <- filter(kuuinfo_graaf, muutus >= 0)
-  label_neg <- filter(kuuinfo_graaf, muutus < 0)
-  label_pos_tuleva <- filter(kuuinfo_graaf, muutus >= 0, Lühinimi == "Tuleva Akt")
-  label_neg_tuleva <- filter(kuuinfo_graaf, muutus < 0, Lühinimi == "Tuleva Akt")
+turg_nadal <- paneel %>%
+  filter(Kuupäev %in% nadala_kp) %>%
+  group_by(kp = as.character(Kuupäev), valitseja, tyyp) %>%
+  summarise(maht = round(sum(maht, na.rm = TRUE)), inv = sum(inv, na.rm = TRUE),
+            .groups = "drop")
 
-  p <- kuuinfo_graaf %>%
-    ggplot(aes(x = muutus, y = Lühinimi)) +
-    geom_col() +
-    geom_col(data = filter(kuuinfo_graaf, Lühinimi == "Tuleva Akt"),
-             fill = "#00aeea", color = "#00aeea") +
-    theme_ft_rc() +
-    labs(title = pealkiri, y = "", x = x_label)
+# Fondide seis iga kuu viimasel andmepäeval (indeksfondide omavaheline
+# konkurents jm); jooksva kuu puhul on see viimane seis, mitte kuu lõpp.
+kuu_kp <- tibble(Kuupäev = kuupaevad) %>%
+  group_by(k = floor_date(Kuupäev, "month")) %>%
+  summarise(Kuupäev = max(Kuupäev), .groups = "drop") %>% pull(Kuupäev)
 
-  kaugus <- dist(range(kuuinfo_graaf$muutus))
+fondid_kuu <- paneel %>%
+  filter(Kuupäev %in% kuu_kp) %>%
+  group_by(kp = as.character(Kuupäev), nimi, valitseja, tyyp) %>%
+  summarise(maht = round(sum(maht, na.rm = TRUE)), inv = sum(inv, na.rm = TRUE),
+            .groups = "drop") %>%
+  filter(maht > 0)
 
-  if(nrow(label_pos) > 0) p <- p +
-      geom_text(data = label_pos, aes(label = label), nudge_x = kaugus * 0.06)
-  if(nrow(label_neg) > 0) p <- p +
-      geom_text(data = label_neg, aes(label = label), nudge_x = kaugus * -0.06,
-                color = "brown3")
-  if(nrow(label_pos_tuleva) > 0) p <- p +
-      geom_text(data = label_pos_tuleva, aes(label = label),
-                nudge_x = kaugus * 0.06, color = "#00aeea")
-  if(nrow(label_neg_tuleva) > 0) p <- p +
-      geom_text(data = label_neg_tuleva, aes(label = label),
-                nudge_x = kaugus * -0.06, color = "#00aeea")
-
+# --- Rahavood ----------------------------------------------------------------
+# Jooksev kuu on pooleli, kui viimane andmepäev pole kuu viimane tööpäev
+kuu_lopp_toopaev <- function(x) {
+  p <- ceiling_date(x, "month") - days(1)
+  while (wday(p, week_start = 1) > 5) p <- p - days(1)
   p
 }
-```
-# Muutused -- investorite arv
+pooleli_kuu <- if (viimane_kp < kuu_lopp_toopaev(viimane_kp)) floor_date(viimane_kp, "month") else as.Date(NA)
+vood_kuu <- paneel %>%
+  filter(!is.na(voog)) %>%
+  group_by(kuu = as.character(floor_date(Kuupäev, "month")), valitseja, tyyp) %>%
+  summarise(voog = round(sum(voog)), turuefekt = round(sum(turuefekt, na.rm = TRUE)),
+            .groups = "drop") %>%
+  mutate(pooleli = coalesce(kuu == as.character(pooleli_kuu), FALSE))
 
-::: panel-tabset
-#### Investoreid -- 1 kuu
+aken_kokkuvote <- function(kuud) {
+  algus <- lahim(viimane_kp %m-% months(kuud))
+  osa <- paneel %>% filter(Kuupäev > algus, Kuupäev <= viimane_kp)
+  otsad <- paneel %>% filter(Kuupäev %in% c(algus, viimane_kp))
+  otsad %>%
+    group_by(nimi, valitseja, tyyp) %>%
+    summarise(maht_alg = sum(maht[Kuupäev == algus], na.rm = TRUE),
+              maht_lopp = sum(maht[Kuupäev == viimane_kp], na.rm = TRUE),
+              inv_alg = sum(inv[Kuupäev == algus], na.rm = TRUE),
+              inv_lopp = sum(inv[Kuupäev == viimane_kp], na.rm = TRUE),
+              .groups = "drop") %>%
+    full_join(osa %>% group_by(nimi) %>%
+                summarise(voog = sum(voog, na.rm = TRUE),
+                          turuefekt = sum(turuefekt, na.rm = TRUE),
+                          yhinemine = sum(yhinemine, na.rm = TRUE), .groups = "drop"),
+              by = "nimi") %>%
+    filter(maht_lopp > 0 | maht_alg > 0) %>%
+    mutate(aken = kuud, algus = as.character(algus),
+           voog = round(voog), turuefekt = round(turuefekt), yhinemine = round(yhinemine),
+           inv_muutus = inv_lopp - inv_alg)
+}
+fondivood <- map_dfr(c(1, 3, 6, 12), aken_kokkuvote)
 
-```{r}
-make_change_plot(indeksfondid, 1, "investeerijate arv")
-```
-#### 3 kuud
+voog12 <- filter(fondivood, aken == 12)
+voog12_tyyp <- voog12 %>% group_by(tyyp) %>% summarise(voog = sum(voog, na.rm = TRUE))
+voog12_indeks   <- voog12_tyyp$voog[voog12_tyyp$tyyp == "Indeks"]
+voog12_aktiivne <- voog12_tyyp$voog[voog12_tyyp$tyyp == "Aktiivne"]
+voog12_kokku    <- sum(voog12$voog, na.rm = TRUE)
+turuefekt12     <- sum(voog12$turuefekt, na.rm = TRUE)
 
-```{r}
-make_change_plot(indeksfondid, 3, "investeerijate arv")
-```
-#### 6 kuud
-```{r}
-make_change_plot(indeksfondid, 6, "investeerijate arv")
-```
-
-#### 12 kuud
-```{r}
-make_change_plot(indeksfondid, 12, "investeerijate arv")
-```
-#### aasta graafik
-
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(`investeerijate arv`))
-
-minp2ev <- maksp2ev %m-% years(1)
-p <- indeksfondid %>%
-  filter(Kuupäev > minp2ev) %>%
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = `investeerijate arv`)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "investeerijaid", title = "Investeerijate arv")
-ggplotly(p)
-```
-:::
-
-
-
-# Muutused -- mahud
-
-::: panel-tabset
-#### Mahud -- 1 kuu
-
-```{r}
-make_change_plot(indeksfondid, 1, "maht")
-```
-#### 3 kuud
-
-```{r}
-make_change_plot(indeksfondid, 3, "maht")
+# --- Valitsejate turuosa ----------------------------------------------------
+valitsejad_nyyd <- paneel %>% filter(Kuupäev == viimane_kp, maht > 0) %>%
+  group_by(valitseja) %>% summarise(maht = sum(maht), inv = sum(inv), .groups = "drop") %>%
+  mutate(osa = 100 * maht / sum(maht)) %>% arrange(desc(maht))
 ```
 
+```{r tootlus}
+# Ametlik tootluste ja tasude tabel (päevastatistika). 2a+ on keskmine aastane.
+# Tärnid fondi nime järel viitavad märkustele tabeli all (nt riskiprofiili
+# muutus): need kanname lehele edasi.
+loe_tootlused <- function() {
+  url <- "https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-paevastatistika/?is_async=1"
+  leht <- NULL
+  for (katse in 1:3) {
+    leht <- tryCatch(read_html(url), error = function(e) {
+      message("Tootluste tabel, katse ", katse, ": ", conditionMessage(e)); NULL })
+    if (!is.null(leht) && !is.na(html_element(leht, "table"))) break
+    leht <- NULL
+    if (katse < 3) Sys.sleep(10)
+  }
+  if (is.null(leht)) stop("ei laadinud")
+  tab <- html_element(leht, "table") %>% html_table(convert = FALSE)
+  # Veerud päise, mitte asukoha järgi — kui Pensionikeskus veerge muudab,
+  # parem selge viga kui vaikselt vales veerus tasud.
+  vaja <- c(Fond = "Fond", kp = "Kuupäev", a3 = "3a", a5 = "5a", a10 = "10a", tasu = "Tasud")
+  puudu <- setdiff(vaja, names(tab))
+  if (length(puudu) > 0) stop("puuduvad veerud: ", paste(puudu, collapse = ", "))
+  tab <- tab[, vaja]; names(tab) <- names(vaja)
+  markused <- html_elements(leht, "p") %>% html_text2() %>% str_squish() %>%
+    str_subset("^\\*+ ") %>%
+    {tibble(tarnid = str_extract(., "^\\*+"), markus = str_remove(., "^\\*+ +"))} %>%
+    distinct(tarnid, .keep_all = TRUE)
+  tab %>%
+    mutate(tarnid = str_extract(Fond, "\\*+$"),
+           Fond = str_trim(str_remove(Fond, "[\u00a0 ]*\\*+$")),
+           kp = dmy(kp),
+           across(c(a3, a5, a10), teksti_arvuks),
+           tasu = teksti_arvuks(str_remove(tasu, "%"))) %>%
+    left_join(markused, by = "tarnid") %>%
+    select(-tarnid)
+}
+tootlus_tabel <- tryCatch(loe_tootlused(), error = function(e) {
+  message("::warning::Tootluste tabel ei laadinud: ", conditionMessage(e))
+  tibble(Fond = character(), kp = as.Date(character()), a3 = numeric(), a5 = numeric(),
+         a10 = numeric(), tasu = numeric(), markus = character())
+})
+tootlus_kp <- if (nrow(tootlus_tabel) > 0) max(tootlus_tabel$kp, na.rm = TRUE) else NA
 
-#### 12 kuud
-```{r}
-make_change_plot(indeksfondid, 12, "maht")
-```
-#### aasta graafik
+# 1 aasta tootlus arvutame ise NAV-ist (tabelis seda pole)
+nav_1a <- paneel %>%
+  filter(Kuupäev %in% c(kp_aasta_tagasi, viimane_kp), !is.na(NAV)) %>%
+  group_by(kood) %>%
+  summarise(a1 = if (n() == 2) 100 * (NAV[Kuupäev == viimane_kp] / NAV[Kuupäev == kp_aasta_tagasi] - 1) else NA_real_,
+            .groups = "drop")
 
-```{r echo=FALSE, message=FALSE, warning=FALSE}
-
-maksp2ev <- max(indeksfondid$Kuupäev)
-viimanep2ev <- indeksfondid %>%
-  filter(Kuupäev == maksp2ev) %>%
-  arrange(desc(maht))
-indeksfondid <- indeksfondid %>%
-  mutate(maht_milj = round(maht/1000000,1))
-
-minp2ev <- maksp2ev %m-% years(1)
-p <- indeksfondid %>%
-  filter(Kuupäev > minp2ev) %>%
-  mutate(Lühinimi = factor(Lühinimi, levels = viimanep2ev$Lühinimi)) %>%
-  ggplot(aes(x = Kuupäev, y = maht_milj)) +
-  geom_line(aes(color = Lühinimi)) +
-  theme_ft_rc() +
-  scale_color_manual(values = colors_fondid) +
-  labs(x = "kuupäev", y = "fondi maht (milj eurot)", title = "Fondide mahud")
-ggplotly(p)
-```
-
-:::
-
-
-```{r}
-
-now_unix <- as.numeric(Sys.time())
-data <- tryCatch(
-  fromJSON(paste0("https://www.pensionikeskus.ee/ws/et/stats/fund-pev?=", now_unix)),
-  error = function(e) stop("Pensionikeskus vahetuste JSON ei laadnud: ", conditionMessage(e))
+# Riskirühm (ligikaudne, praeguse strateegia järgi), et võrrelda sarnaseid
+# fonde. Uue fondi korral tuletame nimest; täpsusta vajadusel siin.
+riskirühm <- tribble(
+  ~kood,   ~risk,
+  "TUK75", "Aktsiad", "LIK75", "Aktsiad", "LXK75", "Aktsiad", "NIK100", "Aktsiad",
+  "NPK75", "Aktsiad", "SIK75", "Aktsiad", "SEK100", "Aktsiad", "SWK100", "Aktsiad",
+  "SWK99", "Aktsiad", "SWK75", "Aktsiad", "SWK09", "Aktsiad",
+  "LLK50", "Segafond", "LMK25", "Segafond", "NPK50", "Segafond", "NPK25", "Segafond",
+  "SEK50", "Segafond", "SEK25", "Segafond", "SWK50", "Segafond", "SWK25", "Segafond",
+  "TUK00", "Võlakirjad", "LXK00", "Võlakirjad", "NPK00", "Võlakirjad", "SEK00", "Võlakirjad",
+  "SWK00", "Võlakirjad"
 )
-period_end <- data$period_info$end
 
-fundnames <- t(data$funds) %>%
-  as.data.frame()
+fonditabel <- paneel %>%
+  filter(Kuupäev == viimane_kp, maht > 0, !str_starts(kood, "_")) %>%
+  select(kood, Fond, nimi, valitseja, tyyp, maht, inv) %>%
+  left_join(nav_1a, by = "kood") %>%
+  left_join(tootlus_tabel %>% select(-kp), by = "Fond") %>%
+  left_join(riskirühm, by = "kood") %>%
+  mutate(risk = coalesce(risk, case_when(
+           str_detect(Fond, regex("võlakirja|konservatiiv|rahulik", ignore_case = TRUE)) ~ "Võlakirjad",
+           tyyp == "Indeks" ~ "Aktsiad", TRUE ~ "Segafond")),
+         across(c(a1, a3, a5, a10, tasu), ~ round(.x, 2)),
+         maht = round(maht)) %>%
+  arrange(desc(maht))
+```
 
-jarjesta_fondid <- function(nimed, vaartus) {
-  nimed_chr <- as.character(nimed)
-  nimed_chr[is.na(nimed_chr) | nimed_chr == ""] <- "Tundmatu fond"
-  factor(nimed_chr, levels = unique(nimed_chr[order(vaartus, na.last = TRUE)]))
+```{r vahetused}
+# Fondivahetused: Pensionikeskuse API annab iga vahetuse kuupäeva kohta
+# avalduste perioodi (period_info) ja fondide kaupa liikumised.
+pev_url <- "https://www.pensionikeskus.ee/ws/et/stats/fund-pev"
+loe_pev <- function(kp = NULL) {
+  url <- if (is.null(kp)) pev_url else paste0(pev_url, "/", kp)
+  for (katse in 1:3) {
+    res <- tryCatch(fromJSON(url, simplifyVector = FALSE), error = function(e) NULL)
+    if (!is.null(res)) return(res)
+    Sys.sleep(5)
+  }
+  NULL
 }
 
-ohutu_max <- function(x, default = 0) {
-  vals <- x[is.finite(x)]
-  if (length(vals) == 0) default else max(vals)
+pev_parse <- function(js) {
+  if (is.null(js) || length(js$stats) == 0) return(NULL)
+  fondinimed <- map_chr(js$funds, ~ .x$name %||% NA_character_)
+  tickerid   <- map_chr(js$funds, ~ .x$ticker %||% NA_character_)
+  piknimed   <- map_chr(js$piks, ~ .x$name %||% NA_character_)
+  # NB! Loeme JSON-ist arvudena otse (varem t(as.data.frame()) ümardas arvud
+  # 7 tüvenumbrini ja OutDec="," muutis komakohaga summad NA-ks).
+  map_dfr(names(js$stats), function(k) {
+    s <- js$stats[[k]]
+    num <- function(x) as.numeric(x %||% 0)
+    tibble(
+      id = k, tyyp_pk = s$type %||% "F",
+      Fond = if (identical(s$type, "P")) unname(piknimed[k]) else unname(fondinimed[k]),
+      kood = if (identical(s$type, "P")) NA_character_ else unname(tickerid[k]),
+      lahkus = num(s$count_to_fund) + num(s$count_to_pik),
+      tuli   = num(s$count_from_fund) + num(s$count_from_pik),
+      lahkus_eur = num(s$amount_to_fund) + num(s$amount_to_pik),
+      tuli_eur   = num(s$amount_from_fund) + num(s$amount_from_pik)
+    )
+  }) %>%
+    # API annab 2017–2018 perioodidel tühja võtmega nullrea
+    filter(id != "", lahkus + tuli > 0 | lahkus_eur + tuli_eur > 0) %>%
+    mutate(vahetus = as.Date(js$stat_date),
+           avaldus_algus = dmy(js$period_info$start),
+           avaldus_lopp  = dmy(js$period_info$end))
 }
 
-ohutu_min <- function(x, default = 0) {
-  vals <- x[is.finite(x)]
-  if (length(vals) == 0) default else min(vals)
+pev_praegu <- loe_pev()
+perioodid <- if (is.null(pev_praegu)) character() else unlist(pev_praegu$period)
+perioodid <- sort(perioodid[as.Date(perioodid) >= as.Date("2017-01-01")])
+
+# Lõppenud vahetuste andmed ei muutu: hoiame need cache'is (CI-s actions/cache)
+# ja küsime uuesti ainult puuduvad ning kaks viimast perioodi.
+PEV_CACHE <- "cache_fund_pev.rds"
+pev_cache <- if (file.exists(PEV_CACHE)) tryCatch(readRDS(PEV_CACHE), error = function(e) list()) else list()
+kysida <- union(setdiff(perioodid, names(pev_cache)), tail(perioodid, 2))
+plan(multisession, workers = 4)
+uued <- future_map(kysida, function(p) {
+  tryCatch(pev_parse(loe_pev(p)), error = function(e) NULL)
+}, .options = furrr_options(seed = TRUE))
+plan(sequential)
+names(uued) <- kysida
+for (p in kysida) if (!is.null(uued[[p]]) && nrow(uued[[p]]) > 0) pev_cache[[p]] <- uued[[p]]
+if (length(pev_cache) > 0) saveRDS(pev_cache, PEV_CACHE)
+vahetused_raw <- bind_rows(pev_cache[intersect(perioodid, names(pev_cache))])
+puuduvad_perioodid <- setdiff(perioodid, names(pev_cache))
+if (length(pev_praegu) == 0 || is.null(pev_praegu)) {
+  message("::warning::Fondivahetuste perioodide nimekiri ei laadinud")
+}
+if (length(puuduvad_perioodid) > 0) {
+  message("::warning::Fondivahetuste andmed puuduvad: ", paste(puuduvad_perioodid, collapse = ", "))
 }
 
-get_fundname <- function(name){
-  if(str_length(name) < 12) return(paste0("PIK: ", name))
-  entry <- fundnames[[name]]
-  if(is.null(entry)) return(paste0("Tundmatu: ", name))
-  return(entry[[1]]$name)
+vahetused <- if (nrow(vahetused_raw) == 0) {
+  tibble(vahetus = as.Date(character()), Fond = character(), kood = character(),
+         nimi = character(), valitseja = character(), tyyp = character(),
+         lahkus = numeric(), tuli = numeric(), lahkus_eur = numeric(),
+         tuli_eur = numeric(), neto = numeric(), neto_eur = numeric(),
+         avaldus_algus = as.Date(character()), avaldus_lopp = as.Date(character()))
+} else {
+  vahetused_raw %>%
+    mutate(Fond = coalesce(Fond, id)) %>%
+    lisa_meta() %>%
+    mutate(
+      valitseja = if_else(tyyp_pk == "P", "Investeerimiskonto", valitseja),
+      tyyp = if_else(tyyp_pk == "P", "Investeerimiskonto", tyyp),
+      nimi = if_else(tyyp_pk == "P", str_replace(Fond, "^PIK ", "Inv.konto: "), nimi),
+      neto = tuli - lahkus, neto_eur = tuli_eur - lahkus_eur
+    )
 }
 
-vahetus <- as.data.frame(t(as.data.frame(data$stats))) %>%
-  rownames_to_column() %>%
-  separate_wider_delim(rowname, ".", names = c("isin", "name")) %>%
-  pivot_wider(names_from = name, values_from = "V1")
+viimane_vahetus <- if (nrow(vahetused) > 0) max(vahetused$vahetus) else NA
+vv <- vahetused %>% filter(vahetus == viimane_vahetus)
+vv_kokku_eur  <- sum(vv$lahkus_eur)
+vv_fond <- vv %>% group_by(nimi) %>% summarise(neto_eur = sum(neto_eur), neto = sum(neto), .groups = "drop")
+vv_parim <- slice_max(vv_fond, neto_eur, n = 1, with_ties = FALSE)
+vv_halvim <- slice_min(vv_fond, neto_eur, n = 1, with_ties = FALSE)
 
-vahetus$fond <- NA
-for(i in vahetus$isin){
-  vahetus$fond[vahetus$isin == i] <- get_fundname(i)
+# Järgmine vahetus: reegel (alates 2021) — avaldused kuni 31.03 / 31.07 / 30.11,
+# vahetus mai / septembri / jaanuari esimesel tööpäeval.
+jargmine_vahetus <- function(paev) {
+  a <- year(paev)
+  kandidaadid <- list(
+    list(lopp = make_date(a, 3, 31),  vahetus = paste0("mai ", a, " alguses")),
+    list(lopp = make_date(a, 7, 31),  vahetus = paste0("septembri ", a, " alguses")),
+    list(lopp = make_date(a, 11, 30), vahetus = paste0("jaanuari ", a + 1, " alguses")),
+    list(lopp = make_date(a + 1, 3, 31), vahetus = paste0("mai ", a + 1, " alguses"))
+  )
+  Filter(function(k) k$lopp >= paev, kandidaadid)[[1]]
 }
-fondinimed <- fondid_info %>%
-  filter(Kuupäev == max(Kuupäev, na.rm = TRUE)) %>%
-  transmute(fond = Fond, lühinimi = Lühinimi) %>%
-  distinct(fond, .keep_all = TRUE)
+# Avalduste aken, mis on täna lahti (vahetus toimub pärast akna lõppu)
+jargmine <- jargmine_vahetus(today())
 
-vahetus <- vahetus %>%
-  select(fond, count_to_fund, count_to_pik, count_from_fund, count_from_pik, amount_to_fund, amount_to_pik, amount_from_fund, amount_from_pik) %>%
-  mutate(across(c(everything(), -fond), as.numeric)) %>%
-  mutate(count_to_fund = count_to_fund + count_to_pik, count_from_fund = count_from_fund + count_from_pik,
-         amount_to_fund = amount_to_fund + amount_to_pik, amount_from_fund = amount_from_fund + amount_from_pik)
-
-fondid_indeks <- fondid %>%
-  filter(indeks == "x")
-
-vahetus_tuleva <- vahetus %>%
-  filter(fond == "Tuleva Maailma Aktsiate Pensionifond")
-
-indeks_vahetus <- vahetus %>%
-  filter(fond %in% fondid_indeks$fond)
-
-indeks_vahetus <- left_join(indeks_vahetus, fondinimed, by = "fond") %>%
-  mutate(lühinimi = if_else(is.na(lühinimi) | lühinimi == "", fond, lühinimi))
-
-# NB: count_to_fund sisaldab juba count_to_pik (liideti ülalpool),
-# seega ei tohi neid uuesti kokku liita
-vahetus_kokku <- sum(vahetus$count_to_fund)
-vahetus_kokku_sum <- sum(vahetus$amount_from_fund)
-
-indeksist_lahkunud <- sum(indeks_vahetus$count_to_fund)
-indeksist_lahkunud_sum <- sum(indeks_vahetus$amount_to_fund)
-
-indeksisse_lisandunud <- sum(indeks_vahetus$count_from_fund)
-indeksisse_lisandunud_sum <- sum(indeks_vahetus$amount_from_fund)
-
-
+vahetused_ojs <- vahetused %>%
+  group_by(vahetus = as.character(vahetus), avaldus_algus = as.character(avaldus_algus),
+           avaldus_lopp = as.character(avaldus_lopp), nimi, valitseja, tyyp) %>%
+  summarise(across(c(lahkus, tuli, lahkus_eur, tuli_eur, neto, neto_eur), sum), .groups = "drop") %>%
+  mutate(across(c(lahkus_eur, tuli_eur, neto_eur), round))
 ```
 
-# Vahetuste statistika (`r period_end`)
+```{r ekspordid}
+# CSV-d (avaldatakse seppo.ai/tuleva/ all)
+turg_paev %>%
+  transmute(Kuupäev, maht = round(osa_maht, 1), investoreid = round(osa_inv, 1)) %>%
+  write_csv("koguturg_indeksfondid_osakaal.csv")
 
-Kokku vahetas fondi **`r format(vahetus_kokku, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(vahetus_kokku_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(vahetus_kokku > 0) round(vahetus_kokku_sum/vahetus_kokku) else 0`€**).
+# Sama veerustik ja tähendus kui vanas versioonis (maht/investoreid =
+# indeksfondid, *_tuleva = ainult Tuleva Maailma Aktsiad, protsendid koguturust).
+# NB! Protsendid arvutame enne, kui `maht` nimetatakse indeksfondide mahuks.
+turg_paev %>%
+  transmute(Kuupäev,
+            maht_turg = maht, investoreid_turg = inv,
+            indeks_maht_protsent = round(osa_maht, 1),
+            indeks_investoreid_protsent = round(osa_inv, 1),
+            tuleva_maht_protsent = round(100 * maht_tuk75 / maht, 2),
+            tuleva_investoreid_protsent = round(100 * inv_tuk75 / inv, 2),
+            maht_kokku = maht, investoreid_kokku = inv,
+            maht_tuleva = maht_tuk75, investoreid_tuleva = inv_tuk75,
+            maht_indeks = maht_indeks, inv_indeks = inv_indeks) %>%
+  transmute(Kuupäev, maht_turg, investoreid_turg,
+            maht = maht_indeks, investoreid = inv_indeks,
+            maht_kokku, investoreid_kokku,
+            indeks_maht_protsent, indeks_investoreid_protsent,
+            maht_tuleva, investoreid_tuleva,
+            tuleva_maht_protsent, tuleva_investoreid_protsent,
+            maht_milj = round(maht / 1e6, 1),
+            investoreid_label = format(investoreid, big.mark = " ", decimal.mark = ",")) %>%
+  write_csv("koguturg_koguinfo.csv")
 
-Indeksfondidest lahkus **`r format(indeksist_lahkunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksist_lahkunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(indeksist_lahkunud > 0) format(round(indeksist_lahkunud_sum/indeksist_lahkunud), big.mark = " ", decimal.mark = ",") else "0"`€**).
-
-Indeksfondidesse lisandus **`r format(indeksisse_lisandunud, big.mark = " ", decimal.mark = ",")` inimest**, summas **`r format(round(indeksisse_lisandunud_sum/1000000), big.mark = " ", decimal.mark = ",")` miljonit eurot** (keskmine summa **`r if(indeksisse_lisandunud > 0) format(round(indeksisse_lisandunud_sum/indeksisse_lisandunud), big.mark = " ", decimal.mark = ",") else "0"`€**).
-
-*NB! Osad indeksfondidest lahkujad või lisandujad võisid minna teise indeksfondi või tulla sealt.*
-
-Tuleva põhifondi lisandus **`r vahetus_tuleva$count_from_fund` investorit**, lahkus **`r vahetus_tuleva$count_to_fund`** (**neto `r vahetus_tuleva$count_from_fund - vahetus_tuleva$count_to_fund`**).
-
-Tuleva põhifondi lisandus **`r round(vahetus_tuleva$amount_from_fund/1000000, 1)` miljonit eurot**, lahkus **`r round(vahetus_tuleva$amount_to_fund/1000000,1)`** (**neto `r round((vahetus_tuleva$amount_from_fund - vahetus_tuleva$amount_to_fund)/1000000, 1)`**).
-
-
-## Vahetused indeksfondidest ja indeksfondidesse
-::: panel-tabset
-#### sisse inimesi
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  rename(huvitav = count_from_fund) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
-  mutate(label = paste0(huvitav, "\n", protsent)) 
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "investoreid") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-p
+ojs_define(
+  turg = turg_nadal,
+  fondidKuu = fondid_kuu,
+  voodKuu = vood_kuu,
+  fondivood = fondivood,
+  fonditabel = fonditabel,
+  vahetused = vahetused_ojs,
+  andmedKuni = as.character(viimane_kp),
+  tootlusKp = if (is.na(tootlus_kp)) "" else as.character(tootlus_kp),
+  puuduvadPerioodid = as.list(puuduvad_perioodid)
+)
 ```
 
+::: {.hero-banner}
+## Kuhu liigub Eesti pensioniraha? {.unlisted}
 
-#### sisse summa
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  rename(huvitav = amount_from_fund) %>%
-  mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
-  mutate(label = paste0(huvitav, "\n", protsent)) 
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Sisenemised teistest fondidest", subtitle = period_end, x = "miljonit eurot") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-p
-```
-
-
-#### sisse keskmine
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  mutate(huvitav = if_else(count_from_fund > 0, round(amount_from_fund/count_from_fund), 0L)) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(label = paste0(huvitav, "€"))
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Keskmine summa teistest fondidest", subtitle = period_end, x = "eurot") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-
-p
-```
-
-
-#### välja inimesi
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  rename(huvitav = count_to_fund) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
-  mutate(label = paste0(huvitav, "\n", protsent)) 
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "investoreid") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-p
-```
-
-#### välja summa
-
-```{r}
-
-
-graafikule <- indeks_vahetus %>%
-  rename(huvitav = amount_to_fund) %>%
-  mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
-  mutate(label = paste0(huvitav, "\n", protsent)) 
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Väljumised teistesse fondidesse", subtitle = period_end, x = "miljonit eurot") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-p
-```
-
-#### välja keskmine
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  mutate(huvitav = if_else(count_to_fund > 0, round(amount_to_fund/count_to_fund), 0L)) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(label = paste0(huvitav, "€"))
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Keskmine summa teistesse fondidesse", subtitle = period_end, x = "eurot") +
-  geom_text(aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06)) +
-  geom_text(data = filter(graafikule, lühinimi == "Tuleva Akt"), 
-            aes(label = label), nudge_x = ohutu_max(graafikule$huvitav * 0.06),
-            color = "#00aeea") +
-  theme_ft_rc()
-
-p
-```
-#### neto summa
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  mutate(huvitav = amount_from_fund - amount_to_fund) %>%
-  mutate(huvitav = round(huvitav/1000000, 1)) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-  mutate(label = paste0(huvitav)) 
-
-label_pos <- graafikule %>%
-  filter(huvitav >= 0)
-
-label_neg <- graafikule %>%
-  filter(huvitav < 0)
-
-label_pos_tuleva <- graafikule %>%
-  filter(huvitav >= 0, fond == "Tuleva Akt")
-
-label_neg_tuleva <- graafikule %>%
-  filter(huvitav < 0, fond == "Tuleva Akt")
-
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Netosumma", subtitle = period_end, x = "miljonit eurot") +
-  theme_ft_rc()
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06))
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60 - 0.5),
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06),
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
-                                           color = "#00aeea")
-
-p
-```
-
-#### neto inimesi
-
-```{r}
-graafikule <- indeks_vahetus %>%
-  mutate(huvitav = count_from_fund - count_to_fund) %>%
-  mutate(fond = jarjesta_fondid(lühinimi, huvitav)) %>%
-#  mutate(protsent = paste0(round(huvitav/sum(huvitav)*100),"%")) %>%
-  mutate(label = paste0(huvitav)) 
-
-label_pos <- graafikule %>%
-  filter(huvitav >= 0)
-
-label_neg <- graafikule %>%
-  filter(huvitav < 0)
-
-label_pos_tuleva <- graafikule %>%
-  filter(huvitav >= 0, fond == "Tuleva Akt")
-
-label_neg_tuleva <- graafikule %>%
-  filter(huvitav < 0, fond == "Tuleva Akt")
-
-
-p <- graafikule %>%
-  ggplot(aes(x = huvitav, y = fond)) +
-  geom_col() +
-  geom_col(data = filter(graafikule, lühinimi == "Tuleva Akt"), fill = "#00aeea", color = "#00aeea") +
-  labs(title = "Neto investorid", subtitle = period_end, x = "investoreid") +
-  theme_ft_rc()
-
-if(nrow(label_pos) > 0) p <- p + geom_text(data = label_pos, aes(label = label), 
-                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06))
-if(nrow(label_neg) > 0) p <- p + geom_text(data = label_neg, aes(label = label), 
-                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
-                                           color = "brown3")
-
-
-if(nrow(label_pos_tuleva) > 0) p <- p + geom_text(data = label_pos_tuleva, aes(label = label), 
-                                           nudge_x = ohutu_max(label_pos$huvitav * 0.06),
-                                           color = "#00aeea")
-if(nrow(label_neg_tuleva) > 0) p <- p + geom_text(data = label_neg_tuleva, aes(label = label), 
-                                           nudge_x = ohutu_min(graafikule$huvitav * 0.60),
-                                           color = "#00aeea")
-
-p
-```
-
-
+::: {.lead}
+Teise samba pensionifondide maht, kogujad, rahavood ja fondivahetused, igapäevaselt Pensionikeskuse andmetel.
 :::
+
+*Andmed seisuga `r fmt_kp(viimane_kp)`, uuenevad iga päev*
+:::
+
+::: {.stats-grid .kpi}
+::: {.stat-card}
+<span class="stat-number">`r fmt_arv(t_nyyd$maht / 1e9, 2)` mld €</span>
+<span class="stat-label">fondide maht kokku</span>
+<span class="stat-delta">`r fmt_delta(t_nyyd$maht / t_eel$maht - 1, fmt_pct(100 * (t_nyyd$maht / t_eel$maht - 1)))` aastaga</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r fmt_pct(t_nyyd$osa_maht)`</span>
+<span class="stat-label">rahast indeksfondides</span>
+<span class="stat-delta">`r fmt_delta(t_nyyd$osa_maht - t_eel$osa_maht, paste0(fmt_arv(t_nyyd$osa_maht - t_eel$osa_maht, 1), " pp"))` aastaga</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r fmt_pct(t_nyyd$osa_inv)`</span>
+<span class="stat-label">kogujatest indeksfondides</span>
+<span class="stat-delta">`r fmt_delta(t_nyyd$osa_inv - t_eel$osa_inv, paste0(fmt_arv(t_nyyd$osa_inv - t_eel$osa_inv, 1), " pp"))` aastaga</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r fmt_arv(t_nyyd$inv / 1000, 0)` tuh</span>
+<span class="stat-label">kogujat fondides</span>
+<span class="stat-delta">`r fmt_delta(t_nyyd$inv - t_eel$inv, fmt_arv(t_nyyd$inv - t_eel$inv))` aastaga</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r ifelse(voog12_indeks >= 0, "+", "")``r fmt_arv(voog12_indeks / 1e6)` mln €</span>
+<span class="stat-label">netovoog indeksfondidesse, 12 kuud</span>
+<span class="stat-delta">aktiivsetesse `r fmt_delta(voog12_aktiivne, fmt_milj(voog12_aktiivne))`</span>
+:::
+::: {.stat-card}
+<span class="stat-number">`r fmt_pct(100 * t_nyyd$maht_tuleva / t_nyyd$maht)`</span>
+<span class="stat-label">Tuleva turuosa mahust</span>
+<span class="stat-delta">`r fmt_delta(100 * (t_nyyd$maht_tuleva / t_nyyd$maht - t_eel$maht_tuleva / t_eel$maht), paste0(fmt_arv(100 * (t_nyyd$maht_tuleva / t_nyyd$maht - t_eel$maht_tuleva / t_eel$maht), 1), " pp"))` aastaga</span>
+:::
+:::
+
+::: {.kokkuvote}
+**Lühidalt**
+
+- Teise samba fondides on **`r fmt_mld(t_nyyd$maht)`** ja **`r fmt_arv(t_nyyd$inv)`** kogujat. Viimase 12 kuuga `r if (t_nyyd$maht >= t_eel$maht) "kasvas" else "kahanes"` maht `r fmt_milj(abs(t_nyyd$maht - t_eel$maht))`, millest **`r fmt_milj(turuefekt12)`** tuli fondide tootlusest ja **`r fmt_milj(voog12_kokku)`** uue raha netovoost (sissemaksed miinus väljamaksed).
+- Indeksfondides on **`r fmt_pct(t_nyyd$osa_maht)`** rahast ja **`r fmt_pct(t_nyyd$osa_inv)`** kogujatest; aasta tagasi vastavalt `r fmt_pct(t_eel$osa_maht)` ja `r fmt_pct(t_eel$osa_inv)`.
+- Suurim fondivalitseja on **`r valitsejad_nyyd$valitseja[1]`** (`r fmt_pct(valitsejad_nyyd$osa[1])` mahust), järgnevad `r valitsejad_nyyd$valitseja[2]` (`r fmt_pct(valitsejad_nyyd$osa[2])`) ja `r valitsejad_nyyd$valitseja[3]` (`r fmt_pct(valitsejad_nyyd$osa[3])`).
+`r if (!is.na(viimane_vahetus)) paste0("- Viimases fondivahetuses (", fmt_kp(viimane_vahetus), ") liikus fondide vahel **", fmt_milj(vv_kokku_eur, 1), "**. Enim võitis **", vv_parim$nimi, "** (", fmt_milj(vv_parim$neto_eur, 1), " neto), enim kaotas **", vv_halvim$nimi, "** (", fmt_milj(vv_halvim$neto_eur, 1), ").") else ""`
+`r if (!is.null(jargmine)) paste0("- Järgmine vahetus: avaldused kuni **", fmt_kp(jargmine$lopp), "**, vahetus toimub ", jargmine$vahetus, ".") else ""`
+:::
+
+```{ojs}
+//| output: false
+// --- Teegid: lehe juurest, mitte CDN-ist (sama versioon, mis Quarto runtime'il)
+libUrl = f => new URL(`ojs-lib/${f}`, document.baseURI).href
+d3 = require(libUrl("d3.min.js"))
+Plot = require.alias({"d3@7.8.5/dist/d3.min.js": libUrl("d3.min.js")})(libUrl("plot.umd.min.js"))
+Inputs = require.alias({"htl@0.3.1/dist/htl.min.js": libUrl("htl.min.js")})(libUrl("inputs.min.js"))
+
+// --- Ühised abifunktsioonid ja värvid --------------------------------------
+et = d3.formatLocale({decimal: ",", thousands: " ", grouping: [3], currency: ["", " €"], minus: "−"})
+f0 = et.format(",.0f")
+f1 = et.format(",.1f")
+f2 = et.format(",.2f")
+fpm = et.format("+,.1f")
+kuud = ["jaan", "veebr", "märts", "apr", "mai", "juuni", "juuli", "aug", "sept", "okt", "nov", "dets"]
+fkp = d => `${d.getUTCDate()}.${d.getUTCMonth() + 1}.${d.getUTCFullYear()}`
+fkuu = d => `${kuud[d.getUTCMonth()]} ${d.getUTCFullYear()}`
+mln = x => `${f1(x / 1e6)} mln €`
+mlnpm = x => `${fpm(x / 1e6)} mln €`
+fsuur = x => Math.abs(x) >= 1e9 ? `${f1(x / 1e9)} mld` : Math.abs(x) >= 1e6 ? `${f0(x / 1e6)} mln` : f0(x)
+kp = s => new Date(s)
+
+// Tuntud valitsejad kindlate värvidega; uued (nt uus fondivalitseja) saavad
+// värvi lisapaletist automaatselt.
+valitsejadTuntud = ["Tuleva", "LHV", "Swedbank", "SEB", "Luminor", "Investeerimiskonto", "Muu"]
+valitsejad = {
+  const lisa = Array.from(new Set([...transpose(turg), ...transpose(vahetused)].map(d => d.valitseja)))
+    .filter(v => v && !valitsejadTuntud.includes(v)).sort();
+  return [...valitsejadTuntud.slice(0, 5), ...lisa, ...valitsejadTuntud.slice(5)];
+}
+valitsejaVarv = {
+  const tuntud = {Tuleva: "#00AEEA", LHV: "#2D2A26", Swedbank: "#FF7F00", SEB: "#60CD18", Luminor: "#8E3A6E", Investeerimiskonto: "#B07D4F", Muu: "#9A9590"};
+  const lisa = ["#4E79A7", "#E15759", "#76B7B2", "#EDC948", "#B07AA1", "#FF9DA7"];
+  let i = 0;
+  return {domain: valitsejad, range: valitsejad.map(v => tuntud[v] ?? lisa[i++ % lisa.length])};
+}
+tyybid = ["Indeks", "Aktiivne", "Investeerimiskonto"]
+tyypVarv = ({domain: tyybid, range: ["#B07D4F", "#8A8580", "#D9CBB8"]})
+pos = "#2E7D4F"
+neg = "#B23A2E"
+stiil = ({fontFamily: "Inter, 'Helvetica Neue', sans-serif", fontSize: "12px", background: "transparent", color: "#2D2A26"})
+
+turgD = transpose(turg).map(d => ({...d, kp: kp(d.kp)}))
+fondidKuuD = transpose(fondidKuu).map(d => ({...d, kp: kp(d.kp)}))
+voodKuuD = transpose(voodKuu).map(d => ({...d, kuu: kp(d.kuu)}))
+fondivoodD = transpose(fondivood)
+tabelD = transpose(fonditabel)
+vahetusedD = transpose(vahetused)
+
+// Horisontaalsed ribad (fondid, vahetused). Kitsal ekraanil on fondi nimi
+// riba kohal, et andmetele jääks ruumi.
+function ribagraafik({andmed, v, silt, title, caption, xFmt, color, stroke}) {
+  const kitsas = width < 600;
+  const nimed = d3.sort(andmed, d => -d[v]).map(d => d.nimi);
+  return Plot.plot({
+    width, style: stiil, caption,
+    height: kitsas ? andmed.length * 42 + 70 : Math.max(360, andmed.length * 22 + 60),
+    marginLeft: kitsas ? 6 : 210, marginRight: kitsas ? 6 : 90, marginTop: kitsas ? 24 : 20,
+    x: {label: null, tickFormat: xFmt, grid: true, ticks: kitsas ? 3 : undefined,
+        insetLeft: kitsas ? 66 : 70, insetRight: kitsas ? 78 : 10},
+    y: {label: null, domain: nimed, axis: kitsas ? null : "left", padding: kitsas ? 0.5 : 0.2},
+    color,
+    marks: [
+      Plot.barX(andmed, {y: "nimi", x: v, fill: "tyyp", stroke, strokeWidth: 2}),
+      Plot.ruleX([0], {stroke: "#2D2A26"}),
+      kitsas ? Plot.text(andmed, {y: "nimi", text: "nimi", frameAnchor: "left", textAnchor: "start", dy: -15, fontSize: 11, fill: "#2D2A26"}) : null,
+      // textAnchor/dx on Plotis konstandid -> positiivsed ja negatiivsed eraldi
+      Plot.text(andmed.filter(d => d[v] >= 0), {y: "nimi", x: v, text: silt, textAnchor: "start", dx: 5, fill: pos, fontSize: 11}),
+      Plot.text(andmed.filter(d => d[v] < 0), {y: "nimi", x: v, text: silt, textAnchor: "end", dx: -5, fill: neg, fontSize: 11}),
+      Plot.tip(andmed, Plot.pointerY({y: "nimi", x: v, title}))
+    ]
+  });
+}
+```
+
+## Indeksfondid vs aktiivsed fondid
+
+Indeksfondid järgivad passiivselt mõnda turuindeksit ja nende tasud on kordades väiksemad. Kui suur osa teisest sambast on juba nendes?
+
+```{ojs}
+viewof aMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {value: "maht", label: "Näita"})
+viewof aKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {value: true, label: "Kujul"})
+```
+
+```{ojs}
+{
+  const rull = d3.rollups(turgD, v => ({
+      Indeks: d3.sum(v.filter(d => d.tyyp === "Indeks"), d => d[aMoodik]),
+      Aktiivne: d3.sum(v.filter(d => d.tyyp === "Aktiivne"), d => d[aMoodik])
+    }), d => +d.kp)
+    .map(([t, o]) => ({kp: new Date(t), ...o, kokku: o.Indeks + o.Aktiivne}))
+    .sort((a, b) => a.kp - b.kp);
+  const pikk = rull.flatMap(d => [
+    {kp: d.kp, tyyp: "Indeks", v: aKuju ? d.Indeks / d.kokku : d.Indeks},
+    {kp: d.kp, tyyp: "Aktiivne", v: aKuju ? d.Aktiivne / d.kokku : d.Aktiivne}
+  ]);
+  const yFmt = aKuju ? (d => `${f0(d * 100)} %`) : (aMoodik === "maht" ? (d => `${f1(d / 1e9)} mld €`) : (d => `${f0(d / 1000)} tuh`));
+  const viimane = rull[rull.length - 1];
+  return Plot.plot({
+    width, height: 380, marginLeft: 64, marginRight: 20, style: stiil,
+    x: {label: null, type: "utc"},
+    y: {label: null, tickFormat: yFmt, grid: true, domain: aKuju ? [0, 1] : undefined},
+    color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], legend: true},
+    marks: [
+      Plot.areaY(pikk, {x: "kp", y: "v", fill: "tyyp", order: ["Indeks", "Aktiivne"], fillOpacity: 0.9}),
+      Plot.ruleY([0]),
+      Plot.ruleX(rull, Plot.pointerX({x: "kp", stroke: "#2D2A26", strokeOpacity: 0.4})),
+      Plot.tip(rull, Plot.pointerX({
+        x: "kp", y: d => aKuju ? d.Indeks / d.kokku : d.Indeks,
+        title: d => aMoodik === "maht"
+          ? `${fkp(d.kp)}\nIndeksfondid: ${f1(d.Indeks / 1e6)} mln € (${f1(100 * d.Indeks / d.kokku)} %)\nAktiivsed: ${f1(d.Aktiivne / 1e6)} mln €\nKokku: ${f1(d.kokku / 1e9)} mld €`
+          : `${fkp(d.kp)}\nIndeksfondides: ${f0(d.Indeks)} (${f1(100 * d.Indeks / d.kokku)} %)\nAktiivsetes: ${f0(d.Aktiivne)}\nKokku: ${f0(d.kokku)}`
+      })),
+      Plot.text([viimane], {x: "kp", y: d => aKuju ? d.Indeks / d.kokku : d.Indeks, text: d => aKuju ? `${f1(100 * d.Indeks / d.kokku)} %` : fsuur(d.Indeks), dx: -6, dy: -10, textAnchor: "end", fontWeight: 700, fill: "#fff", stroke: "#B07D4F", strokeWidth: 3, paintOrder: "stroke"})
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Raha: kõigi fondide maht, sh suletud ja hiljem ühendatud fondid (Pensionikeskuse koguturg). Kogujad: fondide aktiivsete investorite summa; suletud fondide kogujad pole enne nende ühinemist sees.
+:::
+
+### Kes võidab indeksfondide turul?
+
+```{ojs}
+viewof iMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {value: "maht", label: "Näita"})
+```
+
+```{ojs}
+{
+  const indeks = fondidKuuD.filter(d => d.tyyp === "Indeks");
+  const summad = d3.rollup(indeks, v => d3.sum(v, d => d[iMoodik]), d => +d.kp);
+  const andmed = indeks.map(d => ({...d, osa: d[iMoodik] / summad.get(+d.kp)}));
+  const viimaneKp = d3.max(andmed, d => d.kp);
+  const lopp = andmed.filter(d => +d.kp === +viimaneKp).sort((a, b) => b.osa - a.osa);
+  const nimed = lopp.map(d => d.nimi);
+  const varvid = nimed.map(n => valitsejaVarv.range[valitsejaVarv.domain.indexOf(andmed.find(d => d.nimi === n).valitseja)]);
+  // Siltide kattumise vältimine: vähemalt ~14 px vahe (y-ühikutes)
+  const ymax = d3.max(andmed, d => d.osa), vahe = ymax * 14 / 300;
+  let eelmine = Infinity;
+  for (const d of lopp) { d.ySilt = Math.min(d.osa, eelmine - vahe); eelmine = d.ySilt; }
+  const kitsas = width < 600;
+  return Plot.plot({
+    width, height: 380, marginLeft: 44, marginRight: kitsas ? 12 : 230, style: stiil,
+    x: {label: null, type: "utc"},
+    y: {label: null, tickFormat: d => `${f0(d * 100)} %`, grid: true},
+    color: {domain: nimed, range: varvid, legend: kitsas},
+    marks: [
+      Plot.lineY(andmed, {x: "kp", y: "osa", stroke: "nimi", strokeWidth: d => d.nimi.startsWith("Tuleva") ? 2.6 : 1.6}),
+      kitsas ? null : Plot.text(lopp, {x: "kp", y: "ySilt", text: d => `${d.nimi} ${f1(100 * d.osa)} %`, fill: "nimi", textAnchor: "start", dx: 6, fontSize: 11}),
+      Plot.tip(andmed, Plot.pointer({x: "kp", y: "osa", title: d => `${d.nimi}\n${+d.kp === +viimaneKp ? "viimane seis " + fkp(d.kp) : fkuu(d.kp)}: ${f1(100 * d.osa)} % indeksfondide ${iMoodik === "maht" ? "rahast" : "kogujatest"}`}))
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Osakaal kõigi teise samba indeksfondide seas iga kuu viimase andmepäeva seisuga; viimane punkt on viimane seis (`r fmt_kp(viimane_kp)`). Swedbank 1990–99 on elutsüklifond, mis investeerib indeksfondidesse.
+:::
+
+## Fondivalitsejad
+
+```{ojs}
+viewof vMoodik = Inputs.radio(new Map([["Raha", "maht"], ["Kogujad", "inv"]]), {value: "maht", label: "Näita"})
+viewof vKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {value: true, label: "Kujul"})
+```
+
+```{ojs}
+{
+  const rull = d3.flatRollup(turgD, v => d3.sum(v, d => d[vMoodik]), d => +d.kp, d => d.valitseja)
+    .map(([t, valitseja, v]) => ({kp: new Date(t), valitseja, v}));
+  const kokku = d3.rollup(rull, v => d3.sum(v, d => d.v), d => +d.kp);
+  const andmed = rull.map(d => ({...d, osa: d.v / kokku.get(+d.kp), y: vKuju ? d.v / kokku.get(+d.kp) : d.v}));
+  const viimaneKp = d3.max(andmed, d => d.kp);
+  const jarjekord = andmed.filter(d => +d.kp === +viimaneKp).sort((a, b) => b.v - a.v).map(d => d.valitseja)
+    .concat(valitsejad.filter(v => andmed.some(d => d.valitseja === v) && !andmed.some(d => +d.kp === +viimaneKp && d.valitseja === v)));
+  const yFmt = vKuju ? (d => `${f0(d * 100)} %`) : (vMoodik === "maht" ? (d => `${f1(d / 1e9)} mld €`) : (d => `${f0(d / 1000)} tuh`));
+  return Plot.plot({
+    width, height: 400, marginLeft: 64, style: stiil,
+    x: {label: null, type: "utc"},
+    y: {label: null, tickFormat: yFmt, grid: true},
+    color: {domain: jarjekord, range: jarjekord.map(v => valitsejaVarv.range[valitsejaVarv.domain.indexOf(v)]), legend: true},
+    marks: [
+      Plot.areaY(andmed, {x: "kp", y: "y", fill: "valitseja", order: jarjekord, fillOpacity: 0.88}),
+      Plot.ruleY([0]),
+      Plot.tip(andmed, Plot.pointer(Plot.stackY({x: "kp", y: "y", fill: "valitseja", order: jarjekord,
+        title: d => `${d.valitseja}, ${fkp(d.kp)}\n${vMoodik === "maht" ? mln(d.v) : f0(d.v) + " kogujat"}\nturuosa ${f1(100 * d.osa)} %`})))
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Suletud fondide maht enne ühinemist on arvestatud selle valitseja alla, kelle fondiga need ühendati (vt metoodika).
+:::
+
+## Kuhu raha liigub?
+
+Fondi maht muutub kahel põhjusel: **fondi tootlus** (turud tõusevad või langevad) ja **rahavoog** ehk sissemaksed, väljamaksed ja fondivahetused. Mahu muutusest ei saa seda eristada: kui turud langevad, kahaneb iga fondi maht, isegi kui raha juurde voolab. Allpool on fondi tootluse mõju (NAV-i muutus) maha arvatud, et näha ainult rahavoogu.
+
+```{ojs}
+viewof rGrupp = Inputs.radio(new Map([["Fondi tüüp", "tyyp"], ["Fondivalitseja", "valitseja"]]), {value: "tyyp", label: "Grupeeri"})
+viewof rAlates = Inputs.radio(new Map([["Viimased 3 aastat", 3], ["Kogu ajalugu", 99]]), {value: 3, label: "Periood"})
+```
+
+```{ojs}
+{
+  const piir = d3.utcMonth.offset(d3.max(voodKuuD, d => d.kuu), -12 * rAlates);
+  const pooleli = new Set(voodKuuD.filter(d => d.pooleli).map(d => +d.kuu));
+  const andmed = d3.flatRollup(voodKuuD.filter(d => d.kuu > piir), v => d3.sum(v, d => d.voog), d => +d.kuu, d => d[rGrupp])
+    .map(([t, g, voog]) => ({kuu: new Date(t), g, voog, pooleli: pooleli.has(t)}));
+  const kokku = d3.rollups(andmed, v => d3.sum(v, d => d.voog), d => +d.kuu).map(([t, voog]) => ({kuu: new Date(t), voog}));
+  const olemas = new Set(andmed.map(d => d.g));
+  const varv = rGrupp === "tyyp" ? {domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2)}
+    : {domain: valitsejad.filter(v => olemas.has(v)), range: valitsejad.filter(v => olemas.has(v)).map(v => valitsejaVarv.range[valitsejaVarv.domain.indexOf(v)])};
+  const pooleliKuu = andmed.find(d => d.pooleli)?.kuu;
+  return Plot.plot({
+    width, height: 400, marginLeft: 84, style: stiil,
+    caption: pooleliKuu ? `${fkuu(pooleliKuu)} on pooleli (andmed kuni ${fkp(kp(andmedKuni))}), seepärast heledam.` : undefined,
+    x: {label: null, type: "utc"},
+    y: {label: null, tickFormat: d => `${f0(d / 1e6)} mln €`, grid: true},
+    color: {...varv, legend: true},
+    marks: [
+      Plot.rectY(andmed, {x: "kuu", interval: "month", y: "voog", fill: "g", fillOpacity: d => d.pooleli ? 0.4 : 1, insetLeft: 0.5, insetRight: 0.5}),
+      Plot.ruleY([0], {stroke: "#2D2A26"}),
+      Plot.tip(andmed, Plot.pointerX(Plot.stackY({x: "kuu", y: "voog", fill: "g",
+        title: d => `${fkuu(d.kuu)}${d.pooleli ? " (pooleli)" : ""} – ${d.g}\nnetovoog ${mlnpm(d.voog)}\nkokku turul ${mlnpm(kokku.find(k => +k.kuu === +d.kuu).voog)}`})))
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Igakuine netorahavoog fondidesse (sissemaksed, väljamaksed, vahetused, kõik koos). Fondide ühinemised pole rahavoog ja on siit välja jäetud. Suured negatiivsed tulbad 2021–2023 on pensionireformi järgsed raha väljavõtmised; vahetuste kuudel (jaanuar, mai, september) liigub raha fondide vahel.
+:::
+
+### Fondide kaupa
+
+```{ojs}
+viewof fAken = Inputs.select(new Map([["viimane kuu", 1], ["viimased 3 kuud", 3], ["viimased 6 kuud", 6], ["viimased 12 kuud", 12]]), {value: 12, label: "Periood"})
+viewof fNaita = Inputs.radio(new Map([["Netovoog", "voog"], ["Mahu muutus kokku", "muutus"], ["Kogujate muutus", "inv_muutus"]]), {value: "voog", label: "Näita"})
+```
+
+```{ojs}
+{
+  const andmed = fondivoodD.filter(d => d.aken === fAken)
+    .map(d => ({...d, muutus: d.maht_lopp - d.maht_alg, v: fNaita === "muutus" ? d.maht_lopp - d.maht_alg : d[fNaita]}))
+    .filter(d => d.v !== null && !Number.isNaN(d.v));
+  const algus = andmed.length ? andmed[0].algus : "";
+  const sumV = d3.sum(andmed, d => d.v);
+  return ribagraafik({
+    andmed, v: "v",
+    silt: fNaita === "inv_muutus" ? (d => (d.v > 0 ? "+" : "") + f0(d.v)) : (d => mlnpm(d.v)),
+    caption: `${algus.split("-").reverse().join(".")} – ${andmedKuni.split("-").reverse().join(".")}; kokku ${fNaita === "inv_muutus" ? f0(sumV) + " kogujat" : mlnpm(sumV)}`,
+    xFmt: fNaita === "inv_muutus" ? (d => f0(d)) : (d => `${f0(d / 1e6)} mln`),
+    color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2), legend: true},
+    stroke: d => d.nimi.startsWith("Tuleva") ? "#00AEEA" : "none",
+    title: d => `${d.nimi} (${d.valitseja})\nmaht: ${mln(d.maht_alg)} → ${mln(d.maht_lopp)}\n  sellest netovoog ${mlnpm(d.voog)}\n  sellest tootlus ${mlnpm(d.turuefekt)}${d.yhinemine ? `\n  sellest ühinemine ${mlnpm(d.yhinemine)}` : ""}\nkogujad: ${f0(d.inv_alg)} → ${f0(d.inv_lopp)} (${(d.inv_muutus > 0 ? "+" : "") + f0(d.inv_muutus)})`
+  });
+}
+```
+
+::: {.allikas}
+Netovoog = mahu muutus miinus fondi tootluse mõju (päevade kaupa: maht~t~ − maht~t−1~ × NAV~t~ / NAV~t−1~). Fondide ühinemisel üle tulnud raha on eraldi real „ühinemine”, mitte netovoos.
+:::
+
+## Tootlus ja tasud
+
+```{ojs}
+viewof tPeriood = Inputs.radio(new Map([["1 a", "a1"], ["3 a", "a3"], ["5 a", "a5"], ["10 a", "a10"]]), {value: "a5", label: "Tootlus"})
+viewof tRisk = Inputs.select(new Map([["kõik fondid", "kõik"], ["aktsiafondid (suurem risk)", "Aktsiad"], ["segafondid", "Segafond"], ["võlakirjafondid (väiksem risk)", "Võlakirjad"]]), {value: "kõik", label: "Võrdle"})
+```
+
+```{ojs}
+{
+  const valik = tabelD.filter(d => tRisk === "kõik" || d.risk === tRisk);
+  const andmed = valik.filter(d => d.tasu !== null && d[tPeriood] !== null);
+  const puudu = valik.filter(d => d.tasu === null || d[tPeriood] === null);
+  const nI = andmed.filter(d => d.tyyp === "Indeks").length;
+  const perNimi = {a1: "1 aasta", a3: "3 aasta", a5: "5 aasta", a10: "10 aasta"}[tPeriood];
+  return Plot.plot({
+    width, height: 440, marginLeft: 56, marginRight: 56, marginBottom: 44, style: stiil,
+    caption: `Joonisel ${andmed.length} fondi (${nI} indeks-, ${andmed.length - nI} aktiivset).` +
+      (puudu.length ? ` ${puudu.length} fondil pole ${perNimi} tootlust (fond on noorem): ${puudu.map(d => d.nimi).join(", ")}.` : ""),
+    x: {label: "jooksev tasu aastas →", tickFormat: d => `${f2(d)} %`, grid: true, zero: true},
+    y: {label: tPeriood === "a1" ? "↑ tootlus viimase aasta jooksul" : "↑ keskmine aastane tootlus", tickFormat: d => `${f0(d)} %`, grid: true},
+    r: {range: [3, 26]},
+    color: {...tyypVarv, domain: ["Indeks", "Aktiivne"], range: tyypVarv.range.slice(0, 2), legend: true},
+    marks: [
+      Plot.ruleY([0]),
+      Plot.dot(andmed, {x: "tasu", y: tPeriood, r: "maht", fill: "tyyp", fillOpacity: 0.75, stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "#fff", strokeWidth: 1.5}),
+      Plot.text(andmed, {x: "tasu", y: tPeriood, text: d => d.markus ? `${d.nimi} *` : d.nimi, dy: -14, fontSize: 10, fill: "#5A554F", filter: d => d.maht > 6.5e8 || d.nimi.startsWith("Tuleva Maailma A") || tRisk !== "kõik"}),
+      Plot.tip(andmed, Plot.pointer({x: "tasu", y: tPeriood,
+        title: d => `${d.nimi}\njooksev tasu ${f2(d.tasu)} % (${f0(d.tasu * 100)} € iga 10 000 € kohta aastas)\ntootlus: 1 a ${d.a1 === null ? "–" : f1(d.a1) + " %"}, 3 a ${d.a3 === null ? "–" : f1(d.a3) + " %"}, 5 a ${d.a5 === null ? "–" : f1(d.a5) + " %"}, 10 a ${d.a10 === null ? "–" : f1(d.a10) + " %"}\nmaht ${mln(d.maht)}${d.markus ? "\n* " + d.markus : ""}`}))
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Ringi suurus näitab fondi mahtu. Tootlus 3, 5 ja 10 aasta kohta on keskmine aastane (Pensionikeskuse päevastatistika`r if (!is.na(tootlus_kp)) paste0(", seisuga ", fmt_kp(tootlus_kp)) else ""`), 1 aasta tootlus on arvutatud NAV-ist. Jooksevtasu on Pensionikeskuse avaldatud jooksvate tasude määr, mis põhineb fondi eelmise aasta kuludel; see ei ole tänavuse hinnakirja garantii. Riskirühm on ligikaudne ja põhineb fondi praegusel strateegial; võrdle sarnase riskiga fonde.
+:::
+
+::: {.fonditabel}
+```{ojs}
+Inputs.table(tabelD.map(d => ({...d, nimiM: d.markus ? `${d.nimi} *` : d.nimi})), {
+  columns: ["nimiM", "risk", "tyyp", "maht", "inv", "tasu", "a1", "a3", "a5", "a10"],
+  header: {nimiM: "Fond", risk: "Riskirühm", tyyp: "Tüüp", maht: "Maht", inv: "Kogujaid", tasu: "Tasu", a1: "1 a", a3: "3 a†", a5: "5 a†", a10: "10 a†"},
+  format: {
+    maht: d => mln(d), inv: d => f0(d), tasu: d => d === null ? "–" : `${f2(d)} %`,
+    a1: d => d === null ? "–" : `${f1(d)} %`, a3: d => d === null ? "–" : `${f1(d)} %`,
+    a5: d => d === null ? "–" : `${f1(d)} %`, a10: d => d === null ? "–" : `${f1(d)} %`
+  },
+  sort: "maht", reverse: true, rows: 30, layout: "auto", select: false
+})
+```
+:::
+
+```{ojs}
+{
+  const m = tabelD.filter(d => d.markus);
+  return html`<div class="allikas">† keskmine aastane tootlus. Tabelit saab veeru päisel klõpsates sorteerida.${m.length ? html`<br>* Pensionikeskuse märkused: ${m.map(d => html`<br>${d.nimi}: ${d.markus}`)}` : ""}</div>`;
+}
+```
+
+## Fondivahetused
+
+Juba kogutud raha (osakuid) saab teise fondi vahetada kolm korda aastas. Avaldused esitatakse perioodil, mis lõpeb 31. märtsil, 31. juulil või 30. novembril, ja vahetus toimub vastavalt mai, septembri või jaanuari alguses. Kuna kõik vahetused toimuvad samal päeval, on näha täpselt, kuhu raha liikus. Tulevaste sissemaksete suunamine teise fondi jõustub kohe ja seda siin ei näe.
+
+```{ojs}
+perioodid = Array.from(new Set(vahetusedD.map(d => d.vahetus))).sort().reverse()
+viewof vPeriood = perioodid.length ? Inputs.select(perioodid, {value: perioodid[0], label: "Vahetus", width: 420, format: p => {
+  const r = vahetusedD.find(d => d.vahetus === p);
+  return `${fkp(kp(p))} (avaldused ${fkp(kp(r.avaldus_algus))}–${fkp(kp(r.avaldus_lopp))})`;
+}}) : Inputs.input(null)
+viewof vMoot = Inputs.radio(new Map([["Raha", "eur"], ["Lahkumiste arv", "arv"]]), {value: "eur", label: "Näita"})
+```
+
+```{ojs}
+{
+  if (!vPeriood) return html`<p class="allikas">Fondivahetuste andmed ei laadinud.</p>`;
+  const per = vahetusedD.filter(d => d.vahetus === vPeriood);
+  const v = vMoot === "eur" ? "neto_eur" : "neto";
+  const arv = d3.sum(per, d => d.lahkus), raha = d3.sum(per, d => d.lahkus_eur);
+  const andmed = per.filter(d => d.tuli + d.lahkus > 0);
+  return ribagraafik({
+    andmed, v,
+    silt: d => vMoot === "eur" ? mlnpm(d[v]) : (d[v] > 0 ? "+" : "") + f0(d[v]),
+    caption: `Fondide vahel liikus ${mln(raha)}; fondidest lahkuti ${f0(arv)} korral.`,
+    xFmt: vMoot === "eur" ? (d => `${f0(d / 1e6)} mln`) : (d => f0(d)),
+    color: {...tyypVarv, legend: true},
+    stroke: d => d.valitseja === "Tuleva" ? "#00AEEA" : "none",
+    title: d => `${d.nimi}\ntuli ${f0(d.tuli)} korral (${mln(d.tuli_eur)})\nlahkuti ${f0(d.lahkus)} korral (${mln(d.lahkus_eur)})\nneto ${(d.neto > 0 ? "+" : "") + f0(d.neto)}, ${mlnpm(d.neto_eur)}`
+  });
+}
+```
+
+::: {.allikas}
+Lahkumiste arv on fondide kaupa kokku liidetud: kui inimene jagas osakud mitme fondi vahel või vahetas mitmest fondist, on ta loetud mitu korda. See ei ole unikaalsete inimeste arv.
+:::
+
+### Vahetuste ajalugu
+
+```{ojs}
+viewof hGrupp = Inputs.radio(new Map([["Fondi tüüp", "tyyp"], ["Fondivalitseja", "valitseja"]]), {value: "valitseja", label: "Grupeeri"})
+```
+
+```{ojs}
+{
+  if (!vahetusedD.length) return html`<p class="allikas">Fondivahetuste andmed ei laadinud.</p>`;
+  const v = vMoot === "eur" ? "neto_eur" : "neto";
+  const andmed = d3.flatRollup(vahetusedD, g => d3.sum(g, d => d[v]), d => d.vahetus, d => d[hGrupp])
+    .map(([p, g, neto]) => ({p: kp(p), g, neto}));
+  const olemas = new Set(andmed.map(d => d.g));
+  const baas = hGrupp === "tyyp" ? tyypVarv : valitsejaVarv;
+  const varv = {domain: baas.domain.filter(v => olemas.has(v)), range: baas.domain.filter(v => olemas.has(v)).map(v => baas.range[baas.domain.indexOf(v)])};
+  return Plot.plot({
+    width, height: 400, marginLeft: 70, style: stiil,
+    caption: puuduvadPerioodid.length ? `NB! Puuduvad vahetused: ${puuduvadPerioodid.map(p => fkp(kp(p))).join(", ")} (andmed ei laadinud).` : undefined,
+    // Kitsal ekraanil iga teine aasta, muidu kattuvad sildid
+    x: {label: null, type: "band", padding: 0.15, tickSize: 0, tickFormat: d => d.getUTCMonth() === 0 && (width >= 600 || d.getUTCFullYear() % 2 === 0) ? String(d.getUTCFullYear()) : ""},
+    y: {label: null, tickFormat: vMoot === "eur" ? (d => `${f0(d / 1e6)} mln €`) : (d => f0(d)), grid: true},
+    color: {...varv, legend: true},
+    marks: [
+      Plot.barY(andmed, {x: "p", y: "neto", fill: "g"}),
+      Plot.ruleY([0], {stroke: "#2D2A26"}),
+      Plot.tip(andmed, Plot.pointer(Plot.stackY({x: "p", y: "neto", fill: "g",
+        title: d => `Vahetus ${fkp(d.p)} – ${d.g}\nneto ${vMoot === "eur" ? mlnpm(d.neto) : (d.neto > 0 ? "+" : "") + f0(d.neto)}`})))
+    ]
+  })
+}
+```
+
+::: {.allikas}
+Iga vahetuse netotulemus: kes võitis, kes kaotas. Mõõdik (raha või lahkumiste arv) on sama mis ülemisel graafikul.
+:::
+
+## Andmed ja metoodika
+
+- **Allikas:** [Pensionikeskus](https://www.pensionikeskus.ee/statistika/ii-sammas/): fondide maht (ka kõigi fondide koguturg), aktiivsed investorid, NAV, päevastatistika (tasud ja tootlused) ning fondivahetuste statistika. Andmed alates `r fmt_kp(min(kuupaevad))`.
+- **Kogujad** on Pensionikeskuse avaldatud aktiivsete investorite arv fondide kaupa kokku liidetuna. Kui inimesel on osakuid mitmes fondis, võib ta summas korduda.
+- **Netorahavoog** on arvutatud päevade kaupa: mahu muutusest on lahutatud fondi tootluse (NAV-i muutuse) mõju. See sisaldab sissemakseid, väljamakseid, pärandeid ja vahetusi. Päeval, mil fondi maht või NAV on avaldamata, voogu ei arvutata; see läheb järgmise päeva sisse.
+- **Ühinemised ja suletud fondid:** Pensionikeskuse fondide kaupa eksport ei sisalda suletud fonde, aga koguturg sisaldab. Koguturu ja praeguste fondide vahe on suletud fondide maht. Ühinemised tuvastatakse automaatselt: päeval, mil see vahe järsult kahaneb (või arhiveeritud fond lõpetab) ja mõne fondi maht samal päeval sama palju kasvab. Üle tulnud raha ei ole rahavoog. Suletud fondide maht enne ühinemist on arvestatud vastuvõtva fondi valitseja ja tüübi alla. Kui fond edaspidi ekspordist kaob, salvestatakse tema ajalugu arhiivi ja ta jääb analüüsi alles. `r if (nrow(yhinemised) > 0) paste0("Tuvastatud ühinemised: ", paste(yhinemised %>% group_by(Kuupäev) %>% summarise(t = paste0(fmt_kp(first(Kuupäev)), " (", fmt_milj(sum(ylekanne)), ")"), .groups = "drop") %>% pull(t), collapse = "; "), ".") else ""`
+- **Indeksfondid** on Tuleva fondid, LHV Indeks, SEB Indeks, Swedbank Indeks, Swedbank 1990–99 ja Luminor Indeks.
+- Andmefailid: [koguturg_koguinfo.csv](https://seppo.ai/tuleva/koguturg_koguinfo.csv), [koguturg_indeksfondid_osakaal.csv](https://seppo.ai/tuleva/koguturg_indeksfondid_osakaal.csv). Lehe kood: [GitHub](https://github.com/iseppo/periodical/blob/main/turuylevaade.qmd).

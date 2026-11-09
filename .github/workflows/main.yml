@@ -6,6 +6,12 @@ on:
     - cron: '5 11 * * *'
   workflow_dispatch: {}
 
+# Käsitsi ja ajastatud jooks ei tohi kattuda: muidu võiks aeglasem vanem
+# jooks hiljem uuema tulemuse üle kirjutada.
+concurrency:
+  group: daily-reports
+  cancel-in-progress: false
+
 env:
   ANALYSIS_IMAGE: ghcr.io/iseppo/periodical:main@sha256:7060dc9ca38f711d5ae7509c8a299ff2b077f9c693d2af9ebaecc70c82f23008
 
@@ -53,6 +59,32 @@ jobs:
         restore-keys: |
           nav-raw-v1-
 
+    # Turuülevaate cache'id: eelmise jooksu fondide toorandmed (suletud fondide
+    # tuvastamiseks ja arhiveerimiseks) ning lõppenud fondivahetuste andmed.
+    # Arhiiv on ka siin, et push'i nurjumisel see kaotsi ei läheks (cache'i
+    # versioon sisaldab alati commititut). Explicit restore/save, et cache
+    # salvestuks ka siis, kui jooks lõpuks punaseks läheb.
+    - name: Restore market overview cache
+      uses: actions/cache/restore@v5
+      with:
+        path: |
+          cache_ii_fondid.rds
+          cache_fund_pev.rds
+          data/ii_suletud_fondid.csv
+        key: turuylevaade-v1-${{ github.run_id }}
+        restore-keys: |
+          turuylevaade-v1-
+
+    # Eelmine edukalt avaldatud komplekt: stage.mjs võtab sealt aruanderühma,
+    # kui tänane render nurjus (töötav aruanne ei kao saidilt).
+    - name: Restore last good site
+      uses: actions/cache/restore@v5
+      with:
+        path: cloudflare/last-good
+        key: site-last-good-${{ github.run_id }}
+        restore-keys: |
+          site-last-good-
+
     # Tee toorcache'i staatus logist nähtavaks — kui outage päev tuleb
     # ja R-pool kaebab "toorcache puudub", on selge kohe siit, kas:
     #   (a) cache evicti läbi (7p inaktiivsust), või
@@ -93,14 +125,83 @@ jobs:
             echo '--- Done ---'
           "
 
+    # Kui fond kadus Pensionikeskuse ekspordist (suleti/ühendati), kirjutas
+    # turuylevaade.qmd tema ajaloo arhiivi. Commitime selle, et see säiliks.
+    - name: Commit closed-fund archive
+      if: always()
+      shell: bash
+      run: |
+        set -uo pipefail
+        f=data/ii_suletud_fondid.csv
+        [ -f "$f" ] || exit 0
+        git add "$f"
+        if git diff --cached --quiet; then echo "Arhiiv muutumatu"; exit 0; fi
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git commit -m "data: suletud II samba fondide arhiiv $(date -u +%Y-%m-%d)"
+        if ! git pull --rebase --autostash; then git rebase --abort 2>/dev/null || true; fi
+        git push || echo "::warning::Arhiivi push ebaõnnestus (arhiiv on cache'is alles)"
+
+    # Avame turuülevaate päris brauseris: kui OJS-graafikud ei joonistu (nt
+    # teegi või andmete viga), eemaldame lehe ja stage.mjs avaldab eelmise
+    # eduka versiooni.
+    - name: Check market overview in browser
+      id: browser
+      if: always()
+      shell: bash
+      run: |
+        set -uo pipefail
+        [ -f turuylevaade.html ] || { echo "::warning::turuylevaade.html puudub"; exit 0; }
+        python3 -m http.server 8765 >/dev/null 2>&1 &
+        srv=$!
+        for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:8765/ && break; sleep 0.5; done
+        # Kaks laiust: lauaarvuti ja mobiili kood on graafikutes eri harudes.
+        # Tühi DOM (Chrome puudub/aegus) = kontroll ei õnnestunud, mitte viga lehel.
+        halb=0
+        for laius in 1300 390; do
+          dom=$(timeout 90 google-chrome --headless=new --disable-gpu --no-sandbox \
+            --window-size=${laius},3000 --virtual-time-budget=30000 \
+            --dump-dom http://localhost:8765/turuylevaade.html 2>/dev/null || true)
+          if ! grep -q '</html>' <<<"$dom"; then
+            echo "::warning::Brauserikontroll ei õnnestunud (laius $laius) — jätan lehe alles"
+            continue
+          fi
+          graafikuid=$(grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" | wc -l)
+          vigu=$(grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" | wc -l)
+          echo "Laius $laius: graafikuid $graafikuid, OJS vigu $vigu"
+          if [ "$graafikuid" -lt 8 ] || [ "$vigu" -gt 0 ]; then halb=1; fi
+        done
+        kill $srv || true
+        if [ "$halb" = 1 ]; then
+          echo "::error::Turuülevaate graafikud ei joonistunud — avaldan eelmise versiooni"
+          echo "failed=true" >> "$GITHUB_OUTPUT"
+          rm -f turuylevaade.html
+        fi
+
     # --- Cloudflare: seppo.ai/kihlveod/ ja seppo.ai/tuleva/ ---
     # Eraldi staatiline Worker "seppo-ai-kihlveod" (cloudflare/), mille route'id on
     # täpsemad kui seppo.ai põhisaidil. Staatilised failid on tasuta ja piiranguta.
     # Video läheb R2-sse (staatilised failid ei toeta byte range'i, mida video vajab);
     # Worker loeb selle sealt. Saladused: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit,
     # Workers Routes: Edit, Workers R2 Storage: Edit), R2_ACCOUNT_ID.
-    - name: Deploy reports to Cloudflare
+    - name: Stage reports
+      id: stage
       if: always()
+      shell: bash
+      run: |
+        set -euo pipefail
+        node cloudflare/stage.mjs | tee stage.log
+        echo "fallbacks=$(grep -c 'avaldan eelmise eduka versiooni\|varukoopiat pole' stage.log || true)" >> "$GITHUB_OUTPUT"
+        if [ -f cloudflare/public/kihlveod/tuleva.html ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::tuleva.html puudub ka varukoopias — seppo.ai jääb eelmisesse seisu"
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Deploy reports to Cloudflare
+      id: cf
+      if: ${{ always() && steps.stage.outputs.ready == 'true' }}
       shell: bash
       env:
         CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -110,10 +211,6 @@ jobs:
         if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
           echo "::warning::CLOUDFLARE_API_TOKEN puudub — seppo.ai aruandeid ei uuendata"; exit 0
         fi
-        if [ ! -f tuleva.html ]; then
-          echo "::warning::tuleva.html puudub — seppo.ai jääb eelmisesse seisu"; exit 0
-        fi
-        node cloudflare/stage.mjs
         cd cloudflare
         if [ -d media ]; then
           find media -type f | while IFS= read -r f; do
@@ -121,37 +218,39 @@ jobs:
           done
         fi
         npx --yes wrangler@4 deploy
+        echo "deployed=true" >> "$GITHUB_OUTPUT"
+
+    - name: Prepare last good site
+      if: ${{ always() && steps.cf.outputs.deployed == 'true' }}
+      shell: bash
+      run: |
+        rm -rf cloudflare/last-good
+        cp -r cloudflare/public cloudflare/last-good
+
+    - name: Save last good site
+      if: ${{ always() && steps.cf.outputs.deployed == 'true' }}
+      uses: actions/cache/save@v5
+      with:
+        path: cloudflare/last-good
+        key: site-last-good-${{ github.run_id }}
 
     # --- GitHub Pages: avaldame raportid (tuleva juurena, teised failinimega) ---
     - name: Assemble GitHub Pages site
       id: site
-      if: always()
+      if: ${{ always() && steps.stage.outputs.ready == 'true' }}
       shell: bash
       run: |
         set -uo pipefail
-        # turuylevaade ja III_sammas on self-contained HTML-id. tuleva.qmd
-        # on self-contained: false, seega viitab tuleva.html kõrval olevatele
-        # ressurssidele suhteliste URL-idega (tuleva_files/ kaust libs+chart
-        # PNG-dega, tuleva-style.css, video + poster, screenshotid, kihlvedu).
-        # Kopeerime kõik need _site'i kõrvale, et Pages versioon töötaks.
+        # Sama komplekt mis Cloudflare'is (stage.mjs, sh eelmise eduka versiooni
+        # varu). tuleva.html on juur, teised failinimega kõrval.
         mkdir -p _site
-        [ -f tuleva.html ]       && cp tuleva.html       _site/index.html       || echo "::warning::tuleva.html puudub"
-        [ -f turuylevaade.html ] && cp turuylevaade.html _site/turuylevaade.html || echo "::warning::turuylevaade.html puudub"
-        [ -f III_sammas.html ]   && cp III_sammas.html   _site/III_sammas.html   || echo "::warning::III_sammas.html puudub"
-        # tuleva kõrvalressursid (vajalikud, sest tuleva.qmd ei ole
-        # self-contained).
-        [ -d tuleva_files ] && cp -r tuleva_files _site/ || true
-        for f in tuleva-style.css aastane_tulu_animeeritud.mp4 aastane_tulu_tuleva_lhv.png \
-                 ekspress_screenshot.png fb_screenshot.png kihlvedu.png; do
-          [ -f "$f" ] && cp "$f" _site/ || echo "::warning::tuleva kõrvalfail $f puudub"
-        done
-        if [ -f _site/index.html ]; then
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-          ls -la _site
-        else
-          echo "ready=false" >> "$GITHUB_OUTPUT"
-          echo "::warning::tuleva.html puudub — GitHub Pages jääb eelmisesse seisu"
-        fi
+        cp -r cloudflare/public/tuleva/. _site/
+        rm -f _site/index.html
+        cp -r cloudflare/public/kihlveod/. _site/
+        cp _site/tuleva.html _site/index.html
+        [ -d cloudflare/media/kihlveod ] && cp -r cloudflare/media/kihlveod/. _site/ || true
+        echo "ready=true" >> "$GITHUB_OUTPUT"
+        ls -la _site
 
     - name: Setup Pages
       if: ${{ always() && steps.site.outputs.ready == 'true' }}
@@ -217,3 +316,22 @@ jobs:
         git commit -m "chore: heartbeat $(date -u +%Y-%m-%d)"
         git push
 
+    - name: Save market overview cache
+      if: always()
+      uses: actions/cache/save@v5
+      with:
+        path: |
+          cache_ii_fondid.rds
+          cache_fund_pev.rds
+          data/ii_suletud_fondid.csv
+        key: turuylevaade-v1-${{ github.run_id }}
+
+    # Leht jäi saidile, aga vana: jooks punaseks, et tuleks teavituskiri.
+    - name: Fail if an old report was published
+      if: always()
+      shell: bash
+      run: |
+        if [ "${{ steps.browser.outputs.failed }}" = "true" ] || [ "${{ steps.stage.outputs.fallbacks }}" != "0" ]; then
+          echo "::error::Mõni aruanne avaldati eelmisest versioonist (vt hoiatusi ülal)"
+          exit 1
+        fi

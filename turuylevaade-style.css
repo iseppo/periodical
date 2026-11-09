@@ -1,0 +1,60 @@
+/* Turuülevaate lisastiilid (põhi tuleb tuleva-style.css-ist: seppo.ai disainisüsteem) */
+
+main.content { max-width: 920px; }
+
+.hero-banner .lead { max-width: 640px; margin-left: auto; margin-right: auto; }
+
+/* Võtmenumbrid: 3 veergu laial ekraanil, 2 kitsal */
+.stats-grid.kpi { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+@media (max-width: 720px) { .stats-grid.kpi { grid-template-columns: repeat(2, 1fr); } }
+.stats-grid.kpi .stat-card { padding: 22px 16px; }
+.stats-grid.kpi .stat-number { font-size: 2.1rem; }
+.stat-delta { display: block; margin-top: 6px; font-size: 0.82rem; color: var(--text-secondary); }
+.stat-delta .pos { color: #2E7D4F; font-weight: 600; }
+.stat-delta .neg { color: #B23A2E; font-weight: 600; }
+
+/* Lühikokkuvõte */
+.kokkuvote {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 10px;
+  padding: 18px 24px 8px;
+  margin: 28px 0 8px;
+}
+.kokkuvote ul { padding-left: 1.1rem; margin-bottom: 0.6rem; }
+.kokkuvote li { margin-bottom: 0.45rem; }
+
+/* Graafikukaardid */
+.cell-output-display .observablehq,
+.graafik {
+  background: var(--bg-white);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 14px 16px 6px;
+  margin: 10px 0 22px;
+}
+.observablehq form { font-family: var(--font-sans); font-size: 0.9rem; }
+.observablehq form label { color: var(--text-secondary); }
+.observablehq--inspect { display: none; }
+figure figcaption, .plot-caption { color: var(--text-secondary); font-size: 0.84rem; }
+
+.selgitus { color: var(--text-secondary); font-size: 0.92rem; }
+/* Piirangud ja allikad peavad olema loetavad (kontrast ≥ 4,5:1) */
+.allikas { color: var(--text-secondary); font-size: 0.86rem; line-height: 1.5; margin-top: -12px; margin-bottom: 26px; }
+
+/* Tabel */
+.fonditabel table { font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.fonditabel th { font-weight: 600; color: var(--text-secondary); }
+
+h2 { margin-top: 2.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid var(--border); }
+h2.anchored { scroll-margin-top: 20px; }
+
+@media (max-width: 600px) {
+  .stats-grid.kpi { gap: 10px; }
+  .stats-grid.kpi .stat-card { padding: 16px 10px; }
+  .stats-grid.kpi .stat-number { font-size: 1.55rem; white-space: nowrap; }
+  .stats-grid.kpi .stat-label { font-size: 0.68rem; letter-spacing: 0.04em; }
+  .hero-banner h2 { font-size: 1.9rem; }
+  .observablehq form { flex-wrap: wrap; }
+}

@@ -78,3 +78,8 @@ _site/
 # OMC plugin tööfailid
 .omc/
 .positai
+
+# Turuülevaate cache (CI: actions/cache)
+cache_ii_fondid.rds
+cache_fund_pev.rds
+cloudflare/last-good/
