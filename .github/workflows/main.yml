@@ -152,6 +152,7 @@ jobs:
       run: |
         set -uo pipefail
         [ -f turuylevaade.html ] || { echo "::warning::turuylevaade.html puudub"; exit 0; }
+        set +e
         python3 -m http.server 8765 >/dev/null 2>&1 &
         srv=$!
         for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:8765/ && break; sleep 0.5; done
@@ -166,8 +167,9 @@ jobs:
             echo "::warning::Brauserikontroll ei õnnestunud (laius $laius) — jätan lehe alles"
             continue
           fi
-          graafikuid=$(grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" | wc -l)
-          vigu=$(grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" | wc -l)
+          # `|| true`: Actions käivitab bashi -e ja pipefail'iga; 0 vastet ≠ viga
+          graafikuid=$( (grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" || true) | wc -l)
+          vigu=$( (grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" || true) | wc -l)
           echo "Laius $laius: graafikuid $graafikuid, OJS vigu $vigu"
           if [ "$graafikuid" -lt 8 ] || [ "$vigu" -gt 0 ]; then halb=1; fi
         done
