@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ANALYSIS_IMAGE: ghcr.io/iseppo/periodical:main@sha256:7060dc9ca38f711d5ae7509c8a299ff2b077f9c693d2af9ebaecc70c82f23008
+  ANALYSIS_IMAGE: ghcr.io/iseppo/periodical:main@sha256:0326e4eca962056b9469e372fd1984c0043ae65a261c9b8e933f8508dba1bfba
 
 jobs:
   run-analysis:
