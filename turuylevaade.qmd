@@ -397,17 +397,30 @@ for (i in seq_along(kuupaevad)[-1]) {
   if (sum(kand$voog) < 0.5 * V) {
     message("Päeval ", d, " kadus ", fmt_milj(V), " ilma selge vastuvõtjata — käsitlen väljavooluna")
     syndmused[[length(syndmused) + 1]] <- tibble(Kuupäev = d, arh_kadu, jaagi_kadu,
-      kood = NA_character_, ylekanne = 0)
+      kood = NA_character_, ylekanne = 0, inv_ylekanne = 0, inv_viivitus = FALSE)
     next
   }
   ylekanne <- if (sum(kand$voog) >= V) V * kand$voog / sum(kand$voog) else kand$voog
   message("Ühinemine ", d, ": ", fmt_milj(V), " → ",
           paste0(kand$kood, " (", fmt_milj(ylekanne), ")", collapse = ", "))
+  # Kogujad: vastuvõtja kogujate arv hüppab ühinemispäeval suletud fondi
+  # kogujate võrra (kattuvad inimesed loetakse ühe korra, nagu pärast ühinemist)
+  # (mõnikord jõuavad kogujad vastuvõtjasse päev hiljem kui raha)
+  d1 <- if (i < length(kuupaevad)) kuupaevad[i + 1] else d
+  inv_eel <- paneel0 %>% filter(Kuupäev == p, kood %in% kand$kood) %>% select(kood, inv_p = inv)
+  inv_jrg <- paneel0 %>% filter(Kuupäev == d1, kood %in% kand$kood) %>% select(kood, inv_1 = inv)
+  inv_hupe <- kand %>% select(kood, inv) %>% left_join(inv_eel, by = "kood") %>%
+    left_join(inv_jrg, by = "kood") %>%
+    transmute(kood, h0 = coalesce(inv - inv_p, 0), h1 = coalesce(inv_1 - inv, 0),
+              viivitus = h1 > h0 & h1 > 0, h = pmax(0, if_else(viivitus, h1, h0)))
   syndmused[[length(syndmused) + 1]] <- tibble(Kuupäev = d, arh_kadu, jaagi_kadu,
-    kood = kand$kood, ylekanne = ylekanne)
+    kood = kand$kood, ylekanne = ylekanne,
+    inv_ylekanne = inv_hupe$h[match(kand$kood, inv_hupe$kood)],
+    inv_viivitus = inv_hupe$viivitus[match(kand$kood, inv_hupe$kood)])
 }
 syndmused <- bind_rows(tibble(Kuupäev = as.Date(character()), arh_kadu = numeric(),
-                               jaagi_kadu = numeric(), kood = character(), ylekanne = numeric()),
+                               jaagi_kadu = numeric(), kood = character(), ylekanne = numeric(),
+                               inv_ylekanne = numeric(), inv_viivitus = logical()),
                         syndmused)
 yhinemised <- syndmused %>% filter(!is.na(kood))
 
@@ -466,6 +479,9 @@ if (any(jaak$R > 0)) {
     mutate(maht = R * w, vastuvotja = str_remove(kiht, "@.*")) %>%
     group_by(kiht) %>% filter(any(maht > 0)) %>% ungroup()
 }
+kihi_kogujad <- jaagi_syndmused %>%
+  transmute(kiht = paste0(kood, "@", Kuupäev), inv_kiht = round(inv_ylekanne * osa_jaagist),
+            inv_viivitus)
 kihi_read <- if (nrow(kihid) == 0) tibble() else {
   meta_v <- paneel0 %>% distinct(kood, nimi, valitseja, tyyp)
   rec_tootlus <- paneel0 %>% select(Kuupäev, kood, tootlus)
@@ -483,7 +499,11 @@ kihi_read <- if (nrow(kihid) == 0) tibble() else {
            # Kiht järgmisel päeval pärast lõppu: ühinemine (raha liigub vastuvõtjale)
            voog = if_else(row_number() == 1, NA_real_, voog)) %>%
     ungroup() %>%
-    transmute(Kuupäev, kood, Fond, nimi, valitseja, tyyp, maht, inv = NA_real_, NAV = NA_real_,
+    # Kihi kogujad: ühinemispäeva kogujate hüpe (suletud fondi osa jäägist),
+    # eeldame enne ühinemist konstantset — täpsemat ajalugu Pensionikeskus ei anna
+    left_join(kihi_kogujad, by = "kiht") %>%
+    transmute(Kuupäev, kood, Fond, nimi, valitseja, tyyp, maht,
+              inv = if_else(maht > 0, inv_kiht, NA_real_), NAV = NA_real_,
               voog, turuefekt, yhinemine = 0)
 }
 # Kihi lõppemine ühinemispäeval (vastuvõtjale läinud summa on seal + yhinemine)
@@ -493,7 +513,11 @@ kihi_lopud <- if (nrow(kihid) == 0) tibble() else {
     mutate(Kuupäev = jargmine_paev(Kuupäev)) %>%
     filter(!is.na(Kuupäev)) %>%
     left_join(select(jaak, Kuupäev, g), by = "Kuupäev") %>%
-    mutate(yhinemine = -maht * g, maht = 0, voog = 0, turuefekt = 0) %>% select(-g)
+    left_join(kihi_kogujad %>% transmute(kood = paste0("_suletud_", kiht), inv_kiht, inv_viivitus), by = "kood") %>%
+    # Kui kogujad jõudsid vastuvõtjasse päev hiljem, loeme neid ühinemispäeval veel siin
+    mutate(yhinemine = -maht * g, maht = 0, voog = 0, turuefekt = 0,
+           inv = if_else(coalesce(inv_viivitus, FALSE), inv_kiht, 0)) %>%
+    select(-g, -inv_kiht, -inv_viivitus)
 }
 
 paneel <- bind_rows(
@@ -612,6 +636,16 @@ turuefekt12     <- sum(voog12$turuefekt, na.rm = TRUE)
 valitsejad_nyyd <- paneel %>% filter(Kuupäev == viimane_kp, maht > 0) %>%
   group_by(valitseja) %>% summarise(maht = sum(maht), inv = sum(inv), .groups = "drop") %>%
   mutate(osa = 100 * maht / sum(maht)) %>% arrange(desc(maht))
+```
+
+```{r kogujad}
+# Unikaalsete kogujate arv (inimesed, kelle pensionikontol on II samba fondi
+# osakuid). Pensionikeskus annab ainult tänase seisu, ajalugu mitte.
+kogujad_unik <- tryCatch({
+  leht <- paste(readLines("https://www.pensionikeskus.ee/statistika/ii-sammas/avatud-pensionikontode-arv/",
+                          warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+  as.numeric(str_match(leht, '"cat":"count_pko","cnt":(\\d+)')[, 2])
+}, error = function(e) { message("Kogujate koguarv ei laadinud: ", conditionMessage(e)); NA_real_ })
 ```
 
 ```{r tootlus}
@@ -892,7 +926,7 @@ Teise samba pensionifondide maht, kogujad, rahavood ja fondivahetused, igapäeva
 ::: {.kokkuvote}
 **Lühidalt**
 
-- Teise samba fondides on **`r fmt_mld(t_nyyd$maht)`** ja **`r fmt_arv(t_nyyd$inv)`** kogujat. Viimase 12 kuuga `r if (t_nyyd$maht >= t_eel$maht) "kasvas" else "kahanes"` maht `r fmt_milj(abs(t_nyyd$maht - t_eel$maht))`, millest **`r fmt_milj(turuefekt12)`** tuli fondide tootlusest ja **`r fmt_milj(voog12_kokku)`** uue raha netovoost (sissemaksed miinus väljamaksed).
+- Teise samba fondides on **`r fmt_mld(t_nyyd$maht)`**`r if (!is.na(kogujad_unik)) paste0(" ja **", fmt_arv(kogujad_unik), "** kogujat (fondide kaupa kokku ", fmt_arv(t_nyyd$inv), ", sest osa inimesi on mitmes fondis)") else paste0(" ja **", fmt_arv(t_nyyd$inv), "** kogujat")`. Viimase 12 kuuga `r if (t_nyyd$maht >= t_eel$maht) "kasvas" else "kahanes"` maht `r fmt_milj(abs(t_nyyd$maht - t_eel$maht))`, millest **`r fmt_milj(turuefekt12)`** tuli fondide tootlusest ja **`r fmt_milj(voog12_kokku)`** uue raha netovoost (sissemaksed miinus väljamaksed).
 - Indeksfondides on **`r fmt_pct(t_nyyd$osa_maht)`** rahast ja **`r fmt_pct(t_nyyd$osa_inv)`** kogujatest; aasta tagasi vastavalt `r fmt_pct(t_eel$osa_maht)` ja `r fmt_pct(t_eel$osa_inv)`.
 - Suurim fondivalitseja on **`r valitsejad_nyyd$valitseja[1]`** (`r fmt_pct(valitsejad_nyyd$osa[1])` mahust), järgnevad `r valitsejad_nyyd$valitseja[2]` (`r fmt_pct(valitsejad_nyyd$osa[2])`) ja `r valitsejad_nyyd$valitseja[3]` (`r fmt_pct(valitsejad_nyyd$osa[3])`).
 `r if (!is.na(viimane_vahetus)) paste0("- Viimases fondivahetuses (", fmt_kp(viimane_vahetus), ") liikus fondide vahel **", fmt_milj(vv_kokku_eur, 1), "**. Enim võitis **", vv_parim$nimi, "** (", fmt_milj(vv_parim$neto_eur, 1), " neto), enim kaotas **", vv_halvim$nimi, "** (", fmt_milj(vv_halvim$neto_eur, 1), ").") else ""`
@@ -1019,7 +1053,7 @@ viewof aKuju = Inputs.radio(new Map([["Osakaal", true], ["Kokku", false]]), {val
 ```
 
 ::: {.allikas}
-Raha: kõigi fondide maht, sh suletud ja hiljem ühendatud fondid (Pensionikeskuse koguturg). Kogujad: fondide aktiivsete investorite summa; suletud fondide kogujad pole enne nende ühinemist sees.
+Raha: kõigi fondide maht, sh suletud ja hiljem ühendatud fondid (Pensionikeskuse koguturg). Kogujad: fondide aktiivsete investorite summa (mitmes fondis olev inimene loetakse mitu korda); suletud fondide kogujate arv enne ühinemist on hinnatud ühinemispäeva kogujate hüppe järgi. 16.12.2021 langus on 2021. aasta pensionireformi järel lahkunute osakute tühistamine: aktiivsed fondid kaotasid siis 24 %, indeksfondid 8 % kogujatest.
 :::
 
 ### Kes võidab indeksfondide turul?
