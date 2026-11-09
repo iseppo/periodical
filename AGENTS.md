@@ -22,12 +22,10 @@ This document provides comprehensive guidance for AI assistants working with the
 periodical/
 ├── NAV_kasv.R              # Main data processing and visualization script
 ├── run_turuylevaade.R      # Orchestrator script (runs analysis; legacy SCP upload, skipped in CI)
-├── fetch_iii_sammas_fondid.R  # III pillar fund list fetcher
 ├── turuylevaade.qmd        # II pillar market overview (Quarto)
 ├── tuleva.qmd              # Pension fund comparison page (Quarto)
 ├── III_sammas.qmd          # III pillar market overview (Quarto)
 ├── Pensionifondid.csv      # II pillar fund list with IDs
-├── Pensionifondid_III.csv  # III pillar fund list with IDs
 ├── Dockerfile              # Container environment (R 4.6.0 / Ubuntu noble, Quarto 1.9.37)
 ├── renv.lock               # R package dependencies (renv lockfile)
 ├── .github/workflows/
@@ -72,7 +70,7 @@ All `.qmd` files share common structure:
 
 ### Fund IDs
 
-Fund IDs are defined in `Pensionifondid.csv` and `Pensionifondid_III.csv`. Key funds:
+Fund IDs are defined in `Pensionifondid.csv` (III pillar: fetched live in `III_sammas.qmd`, fallback `data/Pensionifondid_III_seed.csv`). Key funds:
 
 - **77** - Tuleva Maailma Aktsiate Pensionifond (index fund)
 - **73** - LHV Pensionifond Indeks
@@ -251,6 +249,22 @@ Handled automatically, no code change needed:
   `cache_ii_fondid.rds`, kept by actions/cache) is written to `data/ii_suletud_fondid.csv`,
   which the workflow commits. Detected mergers are logged in the render output (`Ühinemine …`).
 
+### III pillar (III_sammas.qmd)
+
+Same design and approach as the II pillar overview (OJS/Plot, `turuylevaade-style.css`, `ojs-lib/`):
+- **Full history every run** (volume, NAV, official market total, pension accounts from 2004/2018). The old
+  "download our own published CSV and append" approach is gone.
+- **Fund list and metadata** come from Pensionikeskus: fund IDs from the volume page selector, index/active and
+  risk level (`data-is_index_fund`, `data-srri`) plus fee and unit-holder count from the statistics table.
+  `data/Pensionifondid_III_seed.csv` is only a fallback. Short display names: `lyhinimi` (new funds get an
+  automatic name).
+- **Closed funds** = official total − fund sum ("Suletud fondid"). One-day glitches in the official total are
+  dropped; mergers are detected from a residual drop matched to abnormal inflows within 0–2 market days.
+- **Unit-holder history per fund** is only published as the latest value, so it accumulates:
+  `data/iii_investorid_ajalugu.csv` (committed start) ∪ CI cache ∪ the published CSV on seppo.ai.
+- Render stops (CI then publishes last-good) if the export is older than 10 days or the official total exceeds
+  the fund sum by > max(5 mln €, 1 %) (a fund missing from the export).
+
 ### Animation Encoding Failures
 
 Ensure ffmpeg is installed and accessible. The Docker image includes ffmpeg.
@@ -277,8 +291,8 @@ server. The SCP code in `run_turuylevaade.R` is legacy and CI always skips it (`
   `tuleva/` is `noindex`, set via `_headers` written by `stage.mjs` and in `cloudflare/worker.js`.
 - **`seppo.ai/tuleva/`** shows the market overview: `stage.mjs` copies `turuylevaade.html` to
   `tuleva/index.html`. There is no directory listing any more (`listing.js` was removed).
-- **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html`;
-  raise the threshold when adding charts. Below it, the market overview group is published from last-good.
+- **Browser check** in `main.yml` requires at least 13 rendered Plot charts in `turuylevaade.html` and 11 in
+  `III_sammas.html`; raise the threshold when adding charts. Below it, that report group is published from last-good.
   Both widths must be checked successfully (Chrome failure = fallback). Charts with missing data render an
   empty Plot with a message (`tyhiGraafik`), so a data outage does not drop the chart count.
 - **No partial deploys:** if a report group is missing and has no last-good copy, `stage.mjs` exits 1 and

@@ -77,6 +77,7 @@ jobs:
           cache_ii_fondid.rds
           cache_fund_pev.rds
           data/ii_suletud_fondid.csv
+          iii_sammas_investorid_ajalugu.csv
         key: turuylevaade-v1-${{ github.run_id }}
         restore-keys: |
           turuylevaade-v1-
@@ -191,40 +192,44 @@ jobs:
       shell: bash
       run: |
         set -uo pipefail
-        [ -f turuylevaade.html ] || { echo "::warning::turuylevaade.html puudub"; exit 0; }
         set +e
         python3 -m http.server 8765 >/dev/null 2>&1 &
         srv=$!
         for i in $(seq 1 20); do curl -sf -o /dev/null http://localhost:8765/ && break; sleep 0.5; done
+        # Fail ja vajalik graafikute arv (tõsta, kui lisad graafikuid).
         # Kaks laiust: lauaarvuti ja mobiili kood on graafikutes eri harudes.
         # Kontroll peab mõlemal laiusel õnnestuma; kui Chrome ka teisel katsel
         # tulemust ei anna, ei ole lehte kontrollitud ja avaldame eelmise.
-        halb=0
-        for laius in 1300 390; do
-          dom=""
-          for katse in 1 2; do
-            dom=$(timeout 90 google-chrome --headless=new --disable-gpu --no-sandbox \
-              --window-size=${laius},3000 --virtual-time-budget=30000 \
-              --dump-dom http://localhost:8765/turuylevaade.html 2>/dev/null || true)
-            grep -q '</html>' <<<"$dom" && break
+        for paar in "turuylevaade.html:13" "III_sammas.html:11"; do
+          fail=${paar%%:*}; min=${paar##*:}
+          [ -f "$fail" ] || { echo "::warning::$fail puudub"; continue; }
+          halb=0
+          for laius in 1300 390; do
+            dom=""
+            for katse in 1 2; do
+              dom=$(timeout 90 google-chrome --headless=new --disable-gpu --no-sandbox \
+                --window-size=${laius},3000 --virtual-time-budget=30000 \
+                --dump-dom "http://localhost:8765/$fail" 2>/dev/null || true)
+              grep -q '</html>' <<<"$dom" && break
+            done
+            if ! grep -q '</html>' <<<"$dom"; then
+              echo "::warning::$fail: brauserikontroll ei õnnestunud (laius $laius)"
+              halb=1
+              continue
+            fi
+            # `|| true`: Actions käivitab bashi -e ja pipefail'iga; 0 vastet ≠ viga
+            graafikuid=$( (grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" || true) | wc -l)
+            vigu=$( (grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" || true) | wc -l)
+            echo "$fail laius $laius: graafikuid $graafikuid (vaja $min), OJS vigu $vigu"
+            if [ "$graafikuid" -lt "$min" ] || [ "$vigu" -gt 0 ]; then halb=1; fi
           done
-          if ! grep -q '</html>' <<<"$dom"; then
-            echo "::warning::Brauserikontroll ei õnnestunud (laius $laius)"
-            halb=1
-            continue
+          if [ "$halb" = 1 ]; then
+            echo "::error::$fail: graafikud ei joonistunud — avaldan eelmise versiooni"
+            echo "failed=true" >> "$GITHUB_OUTPUT"
+            rm -f "$fail"
           fi
-          # `|| true`: Actions käivitab bashi -e ja pipefail'iga; 0 vastet ≠ viga
-          graafikuid=$( (grep -oE '<svg[^>]*class="plot-[0-9a-f]+"' <<<"$dom" || true) | wc -l)
-          vigu=$( (grep -oE 'OJS (Runtime )?Error|observablehq--error' <<<"$dom" || true) | wc -l)
-          echo "Laius $laius: graafikuid $graafikuid, OJS vigu $vigu"
-          if [ "$graafikuid" -lt 13 ] || [ "$vigu" -gt 0 ]; then halb=1; fi
         done
         kill $srv || true
-        if [ "$halb" = 1 ]; then
-          echo "::error::Turuülevaate graafikud ei joonistunud — avaldan eelmise versiooni"
-          echo "failed=true" >> "$GITHUB_OUTPUT"
-          rm -f turuylevaade.html
-        fi
 
     # --- Cloudflare: seppo.ai/kihlveod/ ja seppo.ai/tuleva/ ---
     # Eraldi staatiline Worker "seppo-ai-kihlveod" (cloudflare/), mille route'id on
@@ -372,6 +377,7 @@ jobs:
           cache_ii_fondid.rds
           cache_fund_pev.rds
           data/ii_suletud_fondid.csv
+          iii_sammas_investorid_ajalugu.csv
         key: turuylevaade-v1-${{ github.run_id }}
 
     # Leht jäi saidile, aga vana: jooks punaseks, et tuleks teavituskiri.

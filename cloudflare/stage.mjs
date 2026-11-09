@@ -28,7 +28,14 @@ const GROUPS = [
   },
   {
     name: "III sammas", dir: "tuleva",
-    files: ["III_sammas.html", "iii_sammas_koguturg.csv", "iii_sammas_ajalugu.csv",
+    // Ühised CSS ja OJS teegid ka siin, et rühm oleks eelmisest versioonist
+    // taastatav ka siis, kui turuülevaade puudub.
+    files: ["III_sammas.html", "III_sammas_files/", "ojs-lib/", "tuleva-style.css", "turuylevaade-style.css",
+      "iii_sammas_koguturg.csv", "iii_sammas_ajalugu.csv",
+      "iii_sammas_investorid_ajalugu.csv", "iii_sammas_top_fondid.csv"],
+    // Enne 2026-11 oli III_sammas.html iseseisev (self-contained): vana varukoopia
+    // sobib varuks ka siis, kui uusi faile seal veel pole.
+    legacy: ["III_sammas.html", "iii_sammas_koguturg.csv", "iii_sammas_ajalugu.csv",
       "iii_sammas_investorid_ajalugu.csv", "iii_sammas_top_fondid.csv"],
   },
 ];
@@ -55,10 +62,11 @@ for (const g of GROUPS) {
     console.log(`::warning::${g.name}: ${missing.join(", ")} puudub — R2-s jääb eelmine versioon`);
     continue;
   }
-  const lg = g.files.map((f) => path.join(LAST_GOOD, g.dir, src(f)));
-  if (lg.every((p) => fs.existsSync(p))) {
+  const varu = [g.files, g.legacy].filter(Boolean)
+    .find((fl) => fl.every((f) => fs.existsSync(path.join(LAST_GOOD, g.dir, src(f)))));
+  if (varu) {
     console.log(`::warning::${g.name}: puudub ${missing.join(", ")} — avaldan eelmise eduka versiooni`);
-    g.files.forEach((f, i) => copy(lg[i], destOf(g.dir, f)));
+    for (const f of varu) copy(path.join(LAST_GOOD, g.dir, src(f)), destOf(g.dir, f));
     fallbacks++;
   } else {
     // Varukoopiat pole: `wrangler deploy` asendab kogu saidi, seega pooliku

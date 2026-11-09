@@ -101,10 +101,7 @@ message("Käivitan NAV_kasv.R skripti failide genereerimiseks...")
 samm_tulemused["NAV_kasv.R"] <-
   try_command("Rscript", "NAV_kasv.R", error_label = "NAV_kasv.R")
 
-# 2. Tõmbame III samba fondide nimekirja
-message("Tõmban III samba fondide nimekirja...")
-samm_tulemused["fetch_iii_sammas_fondid.R"] <-
-  try_command("Rscript", "fetch_iii_sammas_fondid.R", error_label = "fetch_iii_sammas_fondid.R")
+# 2. III samba fondide nimekiri tuleb nüüd III_sammas.qmd-s otse Pensionikeskusest
 
 # 3. Käivita Quarto renderdamised (iga raport eraldi, üksteisest sõltumatult)
 message("Renderdan Quarto faile...")
