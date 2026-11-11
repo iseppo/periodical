@@ -26,7 +26,7 @@ periodical/
 ├── tuleva.qmd              # Pension fund comparison page (Quarto)
 ├── III_sammas.qmd          # III pillar market overview (Quarto)
 ├── Pensionifondid.csv      # II pillar fund list with IDs
-├── Dockerfile              # Container environment (R 4.6.0 / Ubuntu noble, Quarto 1.9.37)
+├── Dockerfile              # Container environment (R 4.6.2 / Ubuntu 26.04 resolute, Quarto 1.11.9; binaries from P3M resolute)
 ├── renv.lock               # R package dependencies (renv lockfile)
 ├── .github/workflows/
 │   ├── main.yml            # Daily scheduled run (11:05 UTC)
@@ -344,7 +344,7 @@ other two keep their filenames. Site: <https://iseppo.github.io/periodical/>
 
 ### System Dependencies
 
-- R 4.6 (renv.lock is pinned to 4.6.0)
+- R 4.6 (renv.lock is pinned to 4.6.2)
 - Quarto >= 1.4
 - ffmpeg (for video encoding)
 - Node.js + wrangler 4 (Cloudflare deploy; CI uses `npx wrangler@4`)
