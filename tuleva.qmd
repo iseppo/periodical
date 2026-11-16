@@ -149,6 +149,8 @@ edetabel <- navid_end %>% arrange(desc(NAV))
 juhtimas <- edetabel %>% slice(1)
 # Edu teise koha ees protsendipunktides (1 euro väärtuse vahe × 100)
 edu_pp <- (edetabel$NAV[1] - edetabel$NAV[2]) * 100
+# Viik, kui vahe ümardub ühe kümnendkohani nulliks
+viik <- edu_pp < 0.05
 
 arv <- function(x, d = 2) format(round(x, d), nsmall = d, decimal.mark = ",", trim = TRUE)
 kihlvedu_alt <- paste0(
@@ -380,8 +382,8 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 <span class="stat-label">aastat jäänud</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">**`r juhtimas$Fond`**</span>
-<span class="stat-label">`r if (edu_pp < 0.05) "juhib napilt" else paste0("juhib, ", arv(edu_pp, 1), " pp ees")`</span>
+<span class="stat-number">**`r if (viik) "Viik" else juhtimas$Fond`**</span>
+<span class="stat-label">`r if (viik) paste0(paste(edetabel$Fond[abs(edetabel$NAV - edetabel$NAV[1]) * 100 < 0.05], collapse = " ja "), " on viigis") else paste0("juhib, ", arv(edu_pp, 1), " pp ees")`</span>
 :::
 ::: {.stat-card}
 <span class="stat-number">**`r if (is.na(sp500_lastvalue$SP500TR.Close)) "–" else paste0("€", round(sp500_lastvalue$SP500TR.Close))`**</span>
@@ -562,7 +564,7 @@ artikkel <- list(
   mainEntityOfPage = list(`@type` = "WebPage", `@id` = "https://seppo.ai/kihlveod/tuleva.html"),
   publisher = list(`@type` = "Organization", name = "Indrek Seppo"),
   description = paste0("Võrdlus: Tuleva, LHV Ettevõtlik ja SEB 18+ pensionifondide tootlus alates 03.08.2023. ",
-                       "Seisuga ", format(max_kp, "%d.%m.%Y"), " juhib ", juhtimas$Fond, ".")
+                       "Seisuga ", format(max_kp, "%d.%m.%Y"), if (viik) " on fondid viigis." else paste0(" juhib ", juhtimas$Fond, "."))
 )
 cat("```{=html}\n<script type=\"application/ld+json\">\n",
     jsonlite::toJSON(artikkel, auto_unbox = TRUE, pretty = TRUE),
