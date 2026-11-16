@@ -18,7 +18,6 @@ format:
     embed-resources: false
     anchor-sections: true
     smooth-scroll: true
-    include-in-header: analytics.html
     include-after-body: footer.html
     css: [tuleva-style.css, turuylevaade-style.css]
 execute:

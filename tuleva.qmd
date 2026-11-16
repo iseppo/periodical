@@ -17,7 +17,7 @@ format:
     toc-location: left
     toc-depth: 3
     self-contained: false
-    include-in-header: [analytics.html, seo.html]
+    include-in-header: seo.html
     include-after-body: footer.html
     css: tuleva-style.css
 execute:

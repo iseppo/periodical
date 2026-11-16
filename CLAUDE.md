@@ -32,7 +32,6 @@ periodical/
 │   ├── main.yml            # Daily scheduled run (11:05 UTC)
 │   └── build_image.yml     # Docker image build workflow
 ├── data/                   # Local data cache directory
-├── analytics.html          # Google Analytics snippet
 ├── seo.html                # SEO meta tags for tuleva.qmd
 └── footer.html             # Footer HTML for reports
 ```
