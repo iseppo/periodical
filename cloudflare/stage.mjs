@@ -20,7 +20,13 @@ const GROUPS = [
   { name: "kihlvedu", dir: "kihlveod", files: ["tuleva.html", "tuleva_files/", "tuleva-style.css"] },
   { name: "kihlveo pildid", dir: "kihlveod", files: ["aastane_tulu_tuleva_lhv.png", "kihlvedu.png"] },
   { name: "kihlveo video", dir: "kihlveod", files: ["aastane_tulu_animeeritud.mp4"] },
-  { name: "kihlveo staatilised", dir: "kihlveod", files: ["ekspress_screenshot.png", "fb_screenshot.png"] },
+  // PNG-d jäävad seniks, kuni varukoopias võib olla vana tuleva.html, mis neile viitab.
+  { name: "kihlveo staatilised", dir: "kihlveod",
+    files: ["ekspress_screenshot.webp", "fb_screenshot.webp", "ekspress_screenshot.png", "fb_screenshot.png"] },
+  // Ise majutatud fondid (tuleva-style.css viitab fonts/). Eraldi rühmad, sest
+  // fonts/ on repos alati olemas: aruanderühma varukoopia ei sõltu sellest.
+  { name: "fondid kihlveod", dir: "kihlveod", files: ["fonts/"] },
+  { name: "fondid tuleva", dir: "tuleva", files: ["fonts/"] },
   {
     name: "turuülevaade", dir: "tuleva",
     files: ["turuylevaade.html", "turuylevaade_files/", "ojs-lib/", "tuleva-style.css", "turuylevaade-style.css",

@@ -4,7 +4,7 @@ pagetitle: "Tuleva vs LHV vs SEB – pensionifondide tootlus (uuendub iga päev)
 date: today
 lang: et
 image: "aastane_tulu_tuleva_lhv.png"
-robots: "index,follow"
+description: "Tuleva, LHV Ettevõtlik ja SEB 18+ pensionifondide kihlvedu: kui palju on 03.08.2023 fondi pandud euro täna väärt, fondide jooksvad tasud ja panuse suurus. Uueneb iga päev."
 author: "Indrek Seppo"
 language:
   title-block-author-single: "Autor"
@@ -83,80 +83,105 @@ sildi_nihe_paevades <- function(kuupaevad) {
 url <- paste0("https://www.pensionikeskus.ee/statistika/ii-sammas/kogumispensioni-fondide-nav/?download=xls&date_from=",
               KIHLVEO_ALGUS, "&date_to=", ANDMETE_LOPP, "&f%5B0%5D=47&f%5B1%5D=80&f%5B2%5D=77")
 
-navid <- tryCatch({
-  raw <- read.delim(url, fileEncoding = "UTF-16", header = TRUE, dec = ",")
-  if (nrow(raw) == 0) stop("Tühi vastus Pensionikeskusest")
-  raw
-}, error = function(e) {
-  message("NAV andmete laadimine ebaõnnestus: ", e$message)
-  data.frame(Fond = character(), Kuupäev = character(),
-             NAV = numeric(), Lühinimi = character())
-})
+# NAV on lehe tuum. 3 katset (runneri ja Pensionikeskuse vahel on aeg-ajalt
+# lühiajalisi katkestusi); kui ka siis ei tule, peatame renderduse: CI avaldab
+# siis eelmise eduka lehe (stage.mjs), mitte kohatäitjaga lehte.
+loe_navid <- function(url) {
+  vana <- getOption("timeout"); options(timeout = 60)
+  on.exit(options(timeout = vana), add = TRUE)
+  for (katse in 1:3) {
+    res <- tryCatch(
+      read.delim(url, fileEncoding = "UTF-16", header = TRUE, dec = ","),
+      error = function(e) {
+        message("NAV katse ", katse, " ebaõnnestus: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(res) && nrow(res) > 0) return(res)
+    if (katse < 3) Sys.sleep(10)
+  }
+  stop("Pensionikeskuse NAV andmed ei laadinud kolme katsega — renderdus peatub")
+}
+navid <- loe_navid(url)
 
 # Fondi nimede lühendamine
 navid$Fond[navid$Fond == "Tuleva Maailma Aktsiate Pensionifond"] <- "Tuleva Maailma Aktsiad"
 navid$Fond[navid$Fond == "SEB pensionifond 18+"] <- "SEB 18+"
 navid$Fond[navid$Fond == "LHV Pensionifond Ettevõtlik"] <- "LHV Ettevõtlik"
 
-# Kontrollime, kas kõik oodatud fondid on olemas
+# Kõik kolm kihlveo fondi peavad olemas olema, muidu oleks võrdlus vale.
 oodatud_fondid <- c("Tuleva Maailma Aktsiad", "SEB 18+", "LHV Ettevõtlik")
 puuduvad <- setdiff(oodatud_fondid, unique(navid$Fond))
 if (length(puuduvad) > 0) {
-  warning("Puuduvad fondid pärast ümbernimetamist: ", paste(puuduvad, collapse = ", "),
-          "\nOlemasolevad fondid: ", paste(unique(navid$Fond), collapse = ", "))
+  stop("Puuduvad fondid: ", paste(puuduvad, collapse = ", "),
+       "\nOlemasolevad fondid: ", paste(unique(navid$Fond), collapse = ", "))
 }
-navid_ok <- nrow(navid) > 0
 
-if (navid_ok) {
-  navid <- navid %>%
-    mutate(Kuupäev = dmy(Kuupäev)) %>%
-    group_by(Fond, Lühinimi) %>%
-    arrange(Kuupäev, .by_group = TRUE) %>%
-    mutate(NAV = if (first(NAV) != 0) NAV / first(NAV) else NA_real_) %>%
-    ungroup()
+navid <- navid %>%
+  filter(Fond %in% oodatud_fondid) %>%
+  mutate(Kuupäev = dmy(Kuupäev)) %>%
+  filter(!is.na(Kuupäev), !is.na(NAV)) %>%
+  group_by(Fond) %>%
+  arrange(Kuupäev, .by_group = TRUE) %>%
+  mutate(NAV = if (first(NAV) != 0) NAV / first(NAV) else NA_real_) %>%
+  ungroup()
 
-  navid_end <- navid %>%
-    filter(Kuupäev == max(Kuupäev))
+# Iga fondi viimane teadaolev väärtus (mitte ainult ühise viimase kuupäeva
+# read): kui mõni fond avaldab päev hiljem, jääb ta ikka võrdlusse.
+navid_end <- navid %>%
+  group_by(Fond) %>%
+  slice_max(Kuupäev, n = 1, with_ties = FALSE) %>%
+  ungroup()
 
-  juhtimas <- navid_end %>%
-    arrange(desc(NAV)) %>%
-    slice(1)
-
-  max_kp <- max(navid$Kuupäev)
-
-  navid_end <- navid_end %>%
-    # factor() enne fct_reorder'i: forcats 1.0.1 viskab character-sisendi ja
-    # NA väärtuse (nt fond, mille algne NAV oli 0) koosmõjul vea
-    # "idx must contain one integer for each level of f".
-    mutate(Fond = fct_reorder(factor(Fond), NAV)) %>%
-    mutate(Fond = fct_rev(Fond))
-
-  navid <- navid %>%
-    mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
-
-  p <- navid %>%
-    ggplot(aes(x = Kuupäev, y = NAV)) +
-    geom_line(aes(color = Fond)) +
-    geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
-    expand_limits(y = 0.9) +
-    geom_point(data = navid_end, size = 2, aes(color = Fond)) +
-    theme_ipsum_rc() +
-    scale_color_manual(values = FONDIDE_VARVID) +
-    scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
-    # Paremale jätame siltidele püsiva ruumi (osakaaluna teljest), et numbrid mahuksid.
-    scale_x_date(date_labels = "%m/%Y", expand = expansion(mult = c(0.05, 0.08))) +
-    geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = sildi_nihe_paevades(navid$Kuupäev), hjust = 0, show.legend = FALSE) +
-    labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
-         y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
-    theme_transparent
-
-} else {
-  juhtimas <- tibble(Fond = "andmed puuduvad")
-  max_kp <- ANDMETE_LOPP
-  p <- ggplot() +
-    annotate("text", x = 0.5, y = 0.5, label = "Pensionikeskuse NAV andmed pole kättesaadavad") +
-    theme_void()
+if (any(is.na(navid_end$NAV)) || nrow(navid_end) != length(oodatud_fondid)) {
+  stop("Fondide viimased NAV väärtused on puudulikud")
 }
+max_kp <- max(navid$Kuupäev)
+# Kui mõne fondi viimane väärtus on üle nädala vana, on andmed katki.
+if (any(navid_end$Kuupäev < max_kp - 7)) {
+  stop("Mõne fondi NAV on aegunud: ",
+       paste(navid_end$Fond, navid_end$Kuupäev, collapse = ", "))
+}
+if (max_kp < ANDMETE_LOPP - 10) {
+  stop("NAV eksport on vanem kui 10 päeva (", max_kp, ")")
+}
+
+edetabel <- navid_end %>% arrange(desc(NAV))
+juhtimas <- edetabel %>% slice(1)
+# Edu teise koha ees protsendipunktides (1 euro väärtuse vahe × 100)
+edu_pp <- (edetabel$NAV[1] - edetabel$NAV[2]) * 100
+
+arv <- function(x, d = 2) format(round(x, d), nsmall = d, decimal.mark = ",", trim = TRUE)
+kihlvedu_alt <- paste0(
+  "Joongraafik: kui palju on väärt ", format(KIHLVEO_ALGUS, "%d.%m.%Y"),
+  " fondi pandud 1 euro. Seisuga ", format(max_kp, "%d.%m.%Y"), ": ",
+  paste0(edetabel$Fond, " ", arv(edetabel$NAV), " eurot", collapse = "; "), ".")
+
+navid_end <- navid_end %>%
+  # factor() enne fct_reorder'i: forcats 1.0.1 viskab character-sisendi ja
+  # NA väärtuse (nt fond, mille algne NAV oli 0) koosmõjul vea
+  # "idx must contain one integer for each level of f".
+  mutate(Fond = fct_reorder(factor(Fond), NAV)) %>%
+  mutate(Fond = fct_rev(Fond))
+
+navid <- navid %>%
+  mutate(Fond = factor(Fond, levels = levels(navid_end$Fond)))
+
+p <- navid %>%
+  ggplot(aes(x = Kuupäev, y = NAV)) +
+  geom_line(aes(color = Fond)) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey75") +
+  expand_limits(y = 0.9) +
+  geom_point(data = navid_end, size = 2, aes(color = Fond)) +
+  theme_ipsum_rc() +
+  scale_color_manual(values = FONDIDE_VARVID) +
+  scale_y_continuous(labels = scales::number_format(decimal.mark = ",")) +
+  # Paremale jätame siltidele püsiva ruumi (osakaaluna teljest), et numbrid mahuksid.
+  scale_x_date(date_labels = "%m/%Y", expand = expansion(mult = c(0.05, 0.08))) +
+  geom_text(data = navid_end, aes(label = format(round(NAV,2), nsmall = 2, decimal.mark = ","), color = Fond), nudge_x = sildi_nihe_paevades(navid$Kuupäev), hjust = 0, show.legend = FALSE) +
+  labs(title = "Kuidas läheb fondidel?", subtitle = paste0("Kui palju on väärt fondi ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), "\nsissepandud euro nüüd?"),
+       y = paste0(format(KIHLVEO_ALGUS, "%d.%m.%Y"), " sissepandud euro väärtus"), caption = paste0("allikas: Pensionikeskus\nseisuga: ", max_kp)) +
+  theme_transparent
+
 
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "transparent")
 
@@ -215,6 +240,12 @@ fondide_tasud <- fondide_tasud %>%
 fondide_tasud <- fondide_tasud %>%
   mutate(jooksvad_tasud_10k = jooksvad_tasud * 100)  # % * 10000€
 
+tasud_alt <- if (nrow(fondide_tasud) > 0) {
+  paste0("Tulpdiagramm: jooksvad tasud aastas iga 10 000 kogutud euro kohta. ",
+         paste0(fondide_tasud$fond, " ", format(round(fondide_tasud$jooksvad_tasud_10k), decimal.mark = ",", trim = TRUE),
+                " eurot", collapse = "; "), ".")
+} else "Fondide jooksvate tasude andmed pole hetkel kättesaadavad."
+
 if (nrow(fondide_tasud) > 0) {
   p_tasud <- fondide_tasud %>%
     # factor() enne fct_reorder'i — vt selgitust navid_end juures ülalpool.
@@ -239,24 +270,26 @@ if (nrow(fondide_tasud) > 0) {
 
 
 ```{r include=FALSE}
-# Yahoo Finance'i andmete allalaadimine (kasutame tsentraalseid konstante)
-sp500_ok <- tryCatch({
-  sp500_raw <- getSymbols("^SP500TR", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP, auto.assign = FALSE)
-  TRUE
-}, error = function(e) {
-  message("S&P 500 TR andmete allalaadimine ebaõnnestus: ", e$message)
-  FALSE
-})
+# Yahoo Finance'i andmed (3 katset). Kui ei tule, näitame panust kui
+# "andmed puuduvad", mitte vale summat — NAV-võrdlus jääb siiski värskeks.
+lae_yahoo <- function(sumbol) {
+  for (katse in 1:3) {
+    res <- tryCatch(
+      getSymbols(sumbol, src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP, auto.assign = FALSE),
+      error = function(e) {
+        message(sumbol, " katse ", katse, " ebaõnnestus: ", conditionMessage(e))
+        NULL
+      })
+    if (!is.null(res) && NROW(res) > 0) return(res)
+    if (katse < 3) Sys.sleep(10)
+  }
+  message("::warning::", sumbol, " andmed Yahoo Finance'ist ei laadinud")
+  NULL
+}
+sp500_raw <- lae_yahoo("^SP500TR")
+eur_usd_raw <- if (!is.null(sp500_raw)) lae_yahoo("EURUSD=X") else NULL
 
-eur_usd_ok <- tryCatch({
-  eur_usd_raw <- getSymbols("EURUSD=X", src = "yahoo", from = KIHLVEO_ALGUS, to = ANDMETE_LOPP, auto.assign = FALSE)
-  TRUE
-}, error = function(e) {
-  message("EUR/USD andmete allalaadimine ebaõnnestus: ", e$message)
-  FALSE
-})
-
-yahoo_ok <- sp500_ok && eur_usd_ok
+yahoo_ok <- !is.null(sp500_raw) && !is.null(eur_usd_raw)
 if (yahoo_ok) {
   sp500_tr <- Cl(sp500_raw)
   eur_usd <- Cl(eur_usd_raw)
@@ -301,7 +334,7 @@ if (yahoo_ok) {
       labs(title = "Kui suur summa on mängus?", x = "kuupäev", y = "kihlveo summa", caption = paste0("allikas: Yahoo Finance\nseisuga ", max_date)) +
       theme_transparent
   } else {
-    sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)
+    sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = NA_real_)
     max_date <- ANDMETE_LOPP
     p_summa <- ggplot() +
       annotate("text", x = 0.5, y = 0.5, label = "Yahoo Finance andmed pole kättesaadavad") +
@@ -309,18 +342,26 @@ if (yahoo_ok) {
   }
 } else {
   # Loome tühja graafiku, kui Yahoo andmed pole kättesaadavad
-  sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = 1000)
+  sp500_lastvalue <- data.frame(Date = ANDMETE_LOPP, SP500TR.Close = NA_real_)
   max_date <- ANDMETE_LOPP
   p_summa <- ggplot() +
     annotate("text", x = 0.5, y = 0.5, label = "Yahoo Finance andmed pole kättesaadavad") +
     theme_void()
+}
+
+summa_alt <- if (is.na(sp500_lastvalue$SP500TR.Close)) {
+  "Panuse graafik: Yahoo Finance'i andmed pole hetkel kättesaadavad."
+} else {
+  paste0("Joongraafik: kihlveo panus (1000 eurot S&P 500 kogutootluse indeksis, eurodes) alates ",
+         format(KIHLVEO_ALGUS, "%d.%m.%Y"), ". Seisuga ", format(max_date, "%d.%m.%Y"),
+         " on see ", round(sp500_lastvalue$SP500TR.Close), " eurot.")
 }
 ```
 
 
 
 ::: {.hero-banner}
-## Pensionifondide kihlvedu
+<p class="hero-title">Pensionifondide kihlvedu</p>
 
 ::: {.lead}
 Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
@@ -340,17 +381,17 @@ Tuleva vs LHV vs SEB - kümneaastane võitlus parima tootluse eest
 :::
 ::: {.stat-card}
 <span class="stat-number">**`r juhtimas$Fond`**</span>
-<span class="stat-label"> -- hetkel juhtimas</span>
+<span class="stat-label">`r if (edu_pp < 0.05) "juhib napilt" else paste0("juhib, ", arv(edu_pp, 1), " pp ees")`</span>
 :::
 ::: {.stat-card}
-<span class="stat-number">**€`r round(sp500_lastvalue$SP500TR.Close)`**</span>
-<span class="stat-label"> -- panuse suurus (muutub ühes SP500ga)</span>
+<span class="stat-number">**`r if (is.na(sp500_lastvalue$SP500TR.Close)) "–" else paste0("€", round(sp500_lastvalue$SP500TR.Close))`**</span>
+<span class="stat-label">`r if (is.na(sp500_lastvalue$SP500TR.Close)) "panus (andmed hetkel puuduvad)" else "panuse suurus (muutub koos S&P 500-ga)"`</span>
 :::
 :::
 
 <hr class="section-divider">
 
-# Taustast
+## Taustast
 
 Juhuslik trehvamine Vahur Vallistuga LHV Varahaldusest päädis sellega, et sõnadest jäi puudu ja käiku läksid käed, et sõlmida sõbralik kihlvedu.
 
@@ -358,7 +399,7 @@ Kumb tõuseb kümne aastaga rohkem - **LHV Ettevõtlik** (tol ajal LHV L) või *
 
 Päev hiljem liitus kihlveoga Endriko Võrklaev SEBst fondiga, mille nimeks tänaseks **SEB pensionifond 18+**.
 
-Vahel on **tuhat eurot indekseerituna S&P500-ga** (S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid).
+Vahel on **tuhat eurot indekseerituna S&P 500-ga**: täpsemalt S&P 500 kogutootluse indeksiga (dividendid reinvesteeritud), mis on arvutatud eurodesse. S&P 500 on USA 500 suurima börsiettevõtte aktsiate indeks, üks maailma tuntuimaid turuindekseid.
 
 Loe, kust kõik alguse sai:
 
@@ -371,7 +412,7 @@ Loe, kust kõik alguse sai:
 ### [Originaalkihlvedu](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl)
 :::
 ::: {.card-body}
-[![Facebook'i originaallõim kihlveo kohta](fb_screenshot.png)](https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl)
+<a href="https://www.facebook.com/indrek.seppo/posts/pfbid0iQX5FvSVkaguvpt6bnhMvec4iyXEZGdDK3ZuLe1mHqaBKHAJVW8BmUg2usAxhH3Sl"><img src="fb_screenshot.webp" width="684" height="430" loading="lazy" alt="Kuvatõmmis Facebooki postitusest, kus kihlvedu sõlmiti"></a>
 :::
 :::
 :::
@@ -383,7 +424,7 @@ Loe, kust kõik alguse sai:
 ### [Meediakajastus](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed)
 :::
 ::: {.card-body}
-[![Ekspress.ee artikkel kihlveo kohta](ekspress_screenshot.png)](https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed)
+<a href="https://ekspress.delfi.ee/artikkel/120227188/eksperdid-vaidlevad-pensionide-teemal-lhv-suurima-vaenlase-ja-pankuri-debatis-jai-sonadest-vaheks-kaiku-laksid-kaed"><img src="ekspress_screenshot.webp" width="804" height="895" loading="lazy" alt="Kuvatõmmis Eesti Ekspressi artiklist kihlveo kohta"></a>
 :::
 :::
 :::
@@ -393,38 +434,56 @@ Loe, kust kõik alguse sai:
 
 <hr class="section-divider">
 
-# Tootluse võrdlus
+## Tootluse võrdlus
 
 Kihlvedu on teadlikult tehtud pika aja peale. Lühiajalist statistikat mõjutab liigselt juhus. Aga meelelahutuslikel eesmärkidel võib seda ikka jälgida.
 
 
-![](kihlvedu.png){fig-alt="Graafik pensionifondide tootlusest"}
+![](kihlvedu.png){fig-alt="`r kihlvedu_alt`"}
 
-# Millised on fondide jooksvad tasud?
+```{r}
+#| results: asis
+# Sama tulemus tekstina: ekraanilugejale ja otsingumootoritele
+tabel <- edetabel %>%
+  transmute(
+    Fond,
+    `1 euro väärtus täna` = paste0(arv(NAV), " €"),
+    `Muutus` = paste0(ifelse(NAV >= 1, "+", ""), arv((NAV - 1) * 100, 1), " %"),
+    `Vahe liidriga` = ifelse(row_number() == 1, "–", paste0(arv((NAV - NAV[1]) * 100, 1), " pp"))
+  )
+cat(knitr::kable(tabel, format = "pipe", align = "lrrr",
+                 caption = paste0("Kihlveo seis ", format(max_kp, "%d.%m.%Y"),
+                                  " (alates ", format(KIHLVEO_ALGUS, "%d.%m.%Y"), ")")),
+    sep = "\n")
+```
+
+## Millised on fondide jooksvad tasud?
 
 Jooksvad tasud sisaldavad kõiki tasusid, mis fondi kogumisse minevast rahast maha arvatakse (nii fondi juhtimisega seotud tasud, kui näiteks ostu-müügitehingute hinnad jne). Oluline on siin ka see, et neid tasusid **maksad igal aastal kogu senikogutu pealt**, mitte üksnes lisanduva summa pealt. Ehk kui fondi kogum on 10 000 eurot, siis 1% tasu tähendab, et maksad 100 eurot aastas. Kui see kogum kasvab 20 000 euro peale, siis maksad juba 200 eurot aastas ja nii iga aasta.
 
 ```{r}
 #| fig-width: 7
 #| fig-height: 4
+#| fig-alt: !expr tasud_alt
 
 p_tasud
 ```
-NB! Jooksvad tasud on ajas muutuvad, siin on näidatud nende viimane seis, mis avaldatud Pensionikeskuses. Tuleva ühistu liikmena saaksid veel 5€ tagasi *kickback*i oma liikmekapitali arvele.
+NB! Jooksvad tasud on ajas muutuvad, siin on näidatud nende viimane seis, mis avaldatud Pensionikeskuses. Ülaltoodud tootluses on tasud juba maha arvatud: fondi osaku väärtus (NAV) on tasudejärgne. Tuleva ühistu liikmena saaksid veel 5€ tagasi *kickback*i oma liikmekapitali arvele.
 
 Aktiivselt juhitud fondid peavad indeksfondidega sammu pidamiseks ületama turukeskmist (ehk turuindeksit) rohkem, kui nende jooksvad tasud ületavad indeksfondi tasusid. Kogu minu argument on, et ajalooliselt ei ole nad keskmiselt seda suutnud. Kas võib olla erandeid? Võib, aga ma ei paneks oma raha selle alla. Vahur ja Endriko usuvad endasse rohkem.
 
 
-# Kuidas on läinud summal, mille peale kihla vedasime?
+## Kuidas on läinud summal, mille peale kihla vedasime?
 
 Me vedasime kihla 1000€ peale indekseerituna S&P 500-sse. Kuis see summa aja jooksul kasvanud/kahanenud on ja kuhu tänaseks jõudnud?
 
 ```{r}
+#| fig-alt: !expr summa_alt
 p_summa
 ```
 
 
-# Kuidas on LHV fondidel läinud pikemas perspektiivis võrreldes Tulevaga?
+## Kuidas on LHV fondidel läinud pikemas perspektiivis võrreldes Tulevaga?
 
 Tegelikult ei ole pensioniinvestori jaoks kuigi oluline see, kui palju tõuseb mõni fond kahe kuupäeva vahel. Meid huvitab, palju meie jooksvad sissemaksed tõusevad selleks ajaks, kui neid välja võtma hakkame. Ehk neid kuupäevi, mille vaheline kasv -- või langus -- meid huvitab, on palju.
 
@@ -432,17 +491,22 @@ Ma olen siin graafikul püüdnud seda visualiseerida. Ta ei ole päris täpne --
 
 Kuna seda inspireeris mind tegema mingi LHV fondide reklaam, siis võrdlen siin neid fonde, mida LHV hoogsalt soovitab, Tuleva indeksiga, kus ma ise olen. Võrdluseks on lisatud inflatsioon.
 
-![](aastane_tulu_tuleva_lhv.png){fig-alt="Aastane tootluse võrdlus LHV ja Tuleva vahel"}
+NB! Tulbad näitavad **kogukasvu sissepanekust tänaseni**, mitte aastast tootlust: 2018. aasta tulp ütleb, kui palju on 2018. aastal sisse pandud raha tänaseks keskmiselt kokku kasvanud. Jooksva aasta tulp on loomulikult väike, sest see raha on olnud fondis vähe aega.
+
+![](aastane_tulu_tuleva_lhv.png){fig-alt="Tulpdiagramm: kui palju on igal aastal LHV Ettevõtlikku, LHV Julgesse ja Tulevasse pandud raha tänaseks keskmiselt kasvanud, võrrelduna sama aja inflatsiooniga. Näitab kogukasvu sissepanekust tänaseni, mitte aastast tootlust."}
 
 Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et näha, kuidas see graafik ajas muutunud on.
 
-<video width="100%" preload="metadata" muted playsinline controls poster="aastane_tulu_tuleva_lhv.png">
+<video width="100%" preload="metadata" muted playsinline controls poster="aastane_tulu_tuleva_lhv.png" aria-label="Animatsioon: kuidas ülaltoodud kogukasvu graafik on aastate jooksul muutunud">
   <source src="aastane_tulu_animeeritud.mp4" type="video/mp4">
+  Sinu brauser ei näita videot. <a href="aastane_tulu_animeeritud.mp4">Laadi animatsioon alla (MP4)</a>.
 </video>
 
+Video näitab sama graafikut eri ajahetkedel: iga kaader on arvutatud nii, nagu oleks „täna" olnud see kuupäev. [Laadi video alla (MP4)](aastane_tulu_animeeritud.mp4).
 
 
-# Kust näha, kuidas on läinud sinul endal?
+
+## Kust näha, kuidas on läinud sinul endal?
 
 ::: {.grid .my-4}
 
@@ -481,3 +545,26 @@ Huvitav on seegi, kuidas see graafik üle aja muutunud on. Kliki videol, et näh
 :::
 
 :::
+
+```{r}
+#| results: asis
+# Article schema.org: dateModified peab olema päris kuupäev (seo.html on
+# staatiline include, seal Quarto muutujaid ei asendata).
+artikkel <- list(
+  `@context` = "https://schema.org",
+  `@type` = "Article",
+  inLanguage = "et",
+  headline = "Tuleva vs LHV vs SEB – pensionifondide tootlus (uuendub iga päev)",
+  author = list(`@type` = "Person", name = "Indrek Seppo"),
+  datePublished = "2023-08-03",
+  dateModified = format(max_kp, "%Y-%m-%d"),
+  image = list("https://seppo.ai/kihlveod/aastane_tulu_tuleva_lhv.png"),
+  mainEntityOfPage = list(`@type` = "WebPage", `@id` = "https://seppo.ai/kihlveod/tuleva.html"),
+  publisher = list(`@type` = "Organization", name = "Indrek Seppo"),
+  description = paste0("Võrdlus: Tuleva, LHV Ettevõtlik ja SEB 18+ pensionifondide tootlus alates 03.08.2023. ",
+                       "Seisuga ", format(max_kp, "%d.%m.%Y"), " juhib ", juhtimas$Fond, ".")
+)
+cat("```{=html}\n<script type=\"application/ld+json\">\n",
+    jsonlite::toJSON(artikkel, auto_unbox = TRUE, pretty = TRUE),
+    "\n</script>\n```\n", sep = "")
+```

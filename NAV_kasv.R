@@ -732,10 +732,13 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
       aes(label = value_pc),
       place = "top",
       contrast = TRUE,
-      size = 8,
-      padding.x = grid::unit(0.1, "mm"),
-      padding.y = grid::unit(0.2, "mm"),
-      min.size = 2
+      # Püstised sildid: kitsastesse tulpadesse mahub nii loetav kiri.
+      # Liiga madalal tulbal (nt jooksev aasta) jääb silt ära.
+      angle = 90,
+      size = 9,
+      padding.x = grid::unit(0.3, "mm"),
+      padding.y = grid::unit(0.6, "mm"),
+      min.size = 5
     ) +
     scale_fill_manual("Fond:", values = FUND_COLORS) +
     scale_color_manual("Fond:", values = FUND_COLORS) +
@@ -743,7 +746,7 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
     scale_y_percent() +
     labs(
       title = "Kui palju on keskmiselt kasvanud tänaseks raha",
-      subtitle = "sõltuvalt sissepaneku aastast ja fondist",
+      subtitle = "sõltuvalt sissepaneku aastast ja fondist\n(kogukasv tänaseni, mitte aastane tootlus)",
       x = "raha sissepaneku aasta",
       y = "kasv tänaseks",
       caption = paste0(
