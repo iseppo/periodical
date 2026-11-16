@@ -733,8 +733,9 @@ plot_static_chart <- function(pikk, inflatsioon, maxdate) {
       place = "top",
       contrast = TRUE,
       # Püstised sildid: kitsastesse tulpadesse mahub nii loetav kiri.
-      # Liiga madalal tulbal (nt jooksev aasta) jääb silt ära.
+      # Kui silt madalasse tulpa ei mahu, läheb see tulba kohale.
       angle = 90,
+      outside = TRUE,
       size = 9,
       padding.x = grid::unit(0.3, "mm"),
       padding.y = grid::unit(0.6, "mm"),
