@@ -3,7 +3,6 @@ title: "Pensionifondide kihlvedu: Tuleva vs LHV vs SEB"
 pagetitle: "Tuleva vs LHV vs SEB – pensionifondide tootlus (uuendub iga päev)"
 date: today
 lang: et
-image: "aastane_tulu_tuleva_lhv.png"
 description: "Tuleva, LHV Ettevõtlik ja SEB 18+ pensionifondide kihlvedu: kui palju on 03.08.2023 fondi pandud euro täna väärt, fondide jooksvad tasud ja panuse suurus. Uueneb iga päev."
 author: "Indrek Seppo"
 language:
@@ -186,6 +185,11 @@ p <- navid %>%
 
 
 ggsave(p, file = "kihlvedu.png", height = 5, width = 7, scale = 1, bg = "transparent")
+
+# Jagamise eelvaade (og:image): 1200×630 (1,91:1), läbipaistmatu taust, sest
+# sotsiaalmeedia näitab läbipaistvat tausta mustana.
+ggsave(p + theme(plot.background = element_rect(fill = "#F6F4EF", colour = NA)),
+       file = "kihlvedu_og.png", width = 8, height = 4.2, dpi = 150, bg = "#F6F4EF")
 
 ```
 
@@ -560,7 +564,7 @@ artikkel <- list(
   author = list(`@type` = "Person", name = "Indrek Seppo"),
   datePublished = "2023-08-03",
   dateModified = format(max_kp, "%Y-%m-%d"),
-  image = list("https://seppo.ai/kihlveod/aastane_tulu_tuleva_lhv.png"),
+  image = list("https://seppo.ai/kihlveod/kihlvedu_og.png", "https://seppo.ai/kihlveod/aastane_tulu_tuleva_lhv.png"),
   mainEntityOfPage = list(`@type` = "WebPage", `@id` = "https://seppo.ai/kihlveod/tuleva.html"),
   publisher = list(`@type` = "Organization", name = "Indrek Seppo"),
   description = paste0("Võrdlus: Tuleva, LHV Ettevõtlik ja SEB 18+ pensionifondide tootlus alates 03.08.2023. ",

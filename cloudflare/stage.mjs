@@ -20,6 +20,8 @@ const GROUPS = [
   { name: "kihlvedu", dir: "kihlveod", files: ["tuleva.html", "tuleva_files/", "tuleva-style.css"] },
   { name: "kihlveo pildid", dir: "kihlveod", files: ["aastane_tulu_tuleva_lhv.png", "kihlvedu.png"] },
   { name: "kihlveo video", dir: "kihlveod", files: ["aastane_tulu_animeeritud.mp4"] },
+  // optional: kui puudub ja varukoopiat pole, jätame vahele (ei katkesta kogu avaldust).
+  { name: "kihlveo eelvaade", dir: "kihlveod", files: ["kihlvedu_og.png"], optional: true },
   // PNG-d jäävad seniks, kuni varukoopias võib olla vana tuleva.html, mis neile viitab.
   { name: "kihlveo staatilised", dir: "kihlveod",
     files: ["ekspress_screenshot.webp", "fb_screenshot.webp", "ekspress_screenshot.png", "fb_screenshot.png"] },
@@ -78,6 +80,10 @@ for (const g of GROUPS) {
   const olemas = (fl) => fl.every((f) => fs.existsSync(path.join(LAST_GOOD, g.dir, src(f))));
   const varu = [g.files, g.legacy && olemas(g.legacy) && iseseisev(g.dir, g.legacy) ? g.legacy : null]
     .filter(Boolean).find(olemas);
+  if (!varu && g.optional) {
+    console.log(`::warning::${g.name}: ${missing.join(", ")} puudub ja varukoopiat pole — jätan vahele`);
+    continue;
+  }
   if (!varu) {
     // Varukoopiat pole: `wrangler deploy` asendab kogu saidi, seega pooliku
     // komplekti avaldamine kustutaks töötava aruande. Katkestame — sait jääb

@@ -7,6 +7,10 @@ import { fromR2 } from "./r2.js";
 export default {
   async fetch(request, env) {
     const path = decodeURIComponent(new URL(request.url).pathname);
+    // kihlveod/ kaustas on üks leht: suuname kausta-URL-i sellele (404 asemel).
+    if (path === "/kihlveod/") {
+      return Response.redirect(new URL("/kihlveod/tuleva.html", request.url).toString(), 301);
+    }
     if (path.endsWith("/")) {
       const index = await env.ASSETS.fetch(new Request(new URL("index.html", request.url), request));
       if (index.ok) {
